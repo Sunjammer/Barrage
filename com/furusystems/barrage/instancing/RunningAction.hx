@@ -6,7 +6,6 @@ import com.furusystems.barrage.data.properties.Property;
 import com.furusystems.barrage.instancing.events.EventFactory;
 import com.furusystems.barrage.instancing.events.ITriggerableEvent;
 import com.furusystems.barrage.instancing.RunningBarrage;
-import haxe.ds.Vector;
 
 /**
  * ...

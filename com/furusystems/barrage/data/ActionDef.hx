@@ -3,10 +3,6 @@ package com.furusystems.barrage.data;
 import com.furusystems.barrage.data.EventDef;
 import com.furusystems.barrage.data.properties.Property;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class ActionDef extends BarrageItemDef {
 	public var events:Array<EventDef>;
 	public var repeatCount:Property;

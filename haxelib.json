@@ -1,18 +1,15 @@
 {
   "name": "Barrage",
-  "url": "",
   "license": "MIT",
   "tags": [],
   "description": "",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "releasenote": "",
   "contributors": [
-    "decept404"
+    "sunjammer"
   ],
   "dependencies": {
     "hscript": "",
-    "fsignal": "",
-    "delta": "",
-    "glm": ""
+    "munit": ""
   }
 }

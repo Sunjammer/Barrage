@@ -139,7 +139,7 @@ class Parser {
 		}
 
 		if (parent != null) {
-			if (Std.is(parent, ActionDef)) {
+			if (Std.isOfType(parent, ActionDef)) {
 				// parent is action
 				var event = new ActionEventDef();
 				event.actionID = ad.id;
@@ -584,7 +584,7 @@ class Parser {
 				default:
 					event.speed.modifier.set(ABSOLUTE);
 			}
-			if (Std.is(speed, Expr)) {
+			if (Std.isOfType(speed, Expr)) {
 				event.speed.script = speed;
 				event.speed.scripted = true;
 			} else {
@@ -602,7 +602,7 @@ class Parser {
 				default:
 					event.acceleration.modifier.set(ABSOLUTE);
 			}
-			if (Std.is(acceleration, Expr)) {
+			if (Std.isOfType(acceleration, Expr)) {
 				event.acceleration.script = acceleration;
 				event.acceleration.scripted = true;
 			} else {
@@ -622,7 +622,7 @@ class Parser {
 				default:
 					event.position.modifier.set(ABSOLUTE);
 			}
-			if (Std.is(position, Expr)) {
+			if (Std.isOfType(position, Expr)) {
 				event.position.script = position;
 				event.position.scripted = true;
 			} else {
@@ -642,7 +642,7 @@ class Parser {
 				default:
 					event.direction.modifier.set(AIMED);
 			}
-			if (Std.is(direction, Expr)) {
+			if (Std.isOfType(direction, Expr)) {
 				event.direction.script = direction;
 				event.direction.scripted = true;
 			} else {

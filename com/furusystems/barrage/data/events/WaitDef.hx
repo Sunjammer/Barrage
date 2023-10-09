@@ -4,10 +4,6 @@ import com.furusystems.barrage.data.EventDef;
 import com.furusystems.barrage.data.properties.DurationType;
 import hscript.Expr;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class WaitDef extends EventDef {
 	public var waitTime:Float;
 	public var waitTimeScript:Expr;

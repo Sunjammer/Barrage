@@ -6,10 +6,6 @@ import com.furusystems.barrage.instancing.RunningBarrage;
 import haxe.ds.Vector;
 import haxe.EnumFlags;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 enum PropertyModifier {
 	ABSOLUTE;
 	INCREMENTAL;

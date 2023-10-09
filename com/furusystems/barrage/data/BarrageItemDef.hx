@@ -1,9 +1,5 @@
 package com.furusystems.barrage.data;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class BarrageItemDef
 {
 	public var id:Int = 0;

@@ -4,10 +4,6 @@ import com.furusystems.barrage.data.EventDef.EventType;
 import com.furusystems.barrage.data.properties.DurationType;
 import hscript.Expr;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class PropertyTweenDef extends PropertySetDef {
 	public var tweenTime:Float;
 	public var tweenTimeScript:Expr;

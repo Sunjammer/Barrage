@@ -6,10 +6,6 @@ import com.furusystems.barrage.instancing.events.ITriggerableEvent;
 import com.furusystems.barrage.instancing.RunningAction;
 import com.furusystems.barrage.instancing.RunningBarrage;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class DieEvent implements ITriggerableEvent {
 	public var def:DieEventDef;
 	public var hasRun:Bool;

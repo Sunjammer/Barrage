@@ -2,10 +2,6 @@ package com.furusystems.barrage.instancing.events;
 
 import com.furusystems.barrage.data.EventDef;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class EventFactory {
 	public static inline function create(def:EventDef):ITriggerableEvent {
 		return switch (def.type) {

@@ -8,10 +8,6 @@ import com.furusystems.barrage.instancing.RunningBarrage;
 import com.furusystems.barrage.parser.Parser;
 import hscript.Interp;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 @:allow(com.furusystems.barrage.parser.Parser)
 class Barrage {
 	static var cache = new Map<String, Barrage>();

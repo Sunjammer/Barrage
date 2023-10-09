@@ -2,10 +2,6 @@ package com.furusystems.barrage.instancing.animation;
 
 import com.furusystems.barrage.instancing.IBarrageBullet;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class Animator {
 	public var target:IBarrageBullet;
 

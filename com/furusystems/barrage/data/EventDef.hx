@@ -1,9 +1,5 @@
 package com.furusystems.barrage.data;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 enum EventType {
 	PROPERTY_SET;
 	PROPERTY_TWEEN;

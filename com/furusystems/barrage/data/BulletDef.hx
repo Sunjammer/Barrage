@@ -2,10 +2,6 @@ package com.furusystems.barrage.data;
 
 import com.furusystems.barrage.data.properties.Property;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class BulletDef extends BarrageItemDef {
 	public var speed:Property;
 	public var direction:Property;

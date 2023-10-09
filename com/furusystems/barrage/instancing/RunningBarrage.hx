@@ -6,10 +6,10 @@ import com.furusystems.barrage.data.properties.Property;
 import com.furusystems.barrage.instancing.animation.Animator;
 import com.furusystems.barrage.instancing.events.FireEvent;
 import com.furusystems.barrage.instancing.IOrigin;
-import glm.Vec2;
-import fsignal.Signal1;
 import haxe.ds.GenericStack;
 import haxe.ds.Vector.Vector;
+
+typedef Vec2 = {x:Float, y:Float}
 
 /**
  * ...
@@ -21,14 +21,14 @@ class RunningBarrage {
 	// public var allActions:Vector<RunningAction>;
 	public var activeActions:Array<RunningAction>;
 	public var time:Float = 0;
-	public var onComplete:Signal1<RunningBarrage>;
+	public var onComplete:RunningBarrage->Void;
 	public var lastBulletFired:IBarrageBullet;
-	public var animators:GenericStack<Animator>; // TODO: Replace with vector pool?
+	public var animators:GenericStack<Animator>;
 	public var bullets:GenericStack<IBarrageBullet>;
 	public var speedScale:Float;
 	public var accelScale:Float;
 
-	static var basePositionVec = new Vec2();
+	static var basePositionVec:Vec2 = {x: 0, y: 0};
 
 	var started:Bool;
 	var lastDelta:Float = 0;
@@ -38,7 +38,6 @@ class RunningBarrage {
 	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0) {
 		this.speedScale = speedScale;
 		this.accelScale = accelScale;
-		onComplete = new Signal1<RunningBarrage>();
 		this.emitter = emitter;
 		this.owner = owner;
 		activeActions = [];
@@ -73,7 +72,7 @@ class RunningBarrage {
 
 		if (activeActions.length == 0 || bullets.isEmpty()) {
 			stop();
-			onComplete.dispatch(this);
+			onComplete(this);
 		} else {
 			var i = activeActions.length;
 			while (i-- > 0) {
@@ -143,10 +142,9 @@ class RunningBarrage {
 		emitter = null;
 	}
 
-	static var tempVec:Vec2 = new Vec2();
+	static var tempVec:Vec2 = {x: 0, y: 0};
 
-	function applyProperty(origin:Vec2, base:Float, prev:Float, prop:Property, runningBarrage:RunningBarrage,
-			runningAction:RunningAction):Float {
+	function applyProperty(origin:Vec2, base:Float, prev:Float, prop:Property, runningBarrage:RunningBarrage, runningAction:RunningAction):Float {
 		var other = prop.get(runningBarrage, runningAction);
 		if (prop.modifier.has(INCREMENTAL)) {
 			return prev + other;

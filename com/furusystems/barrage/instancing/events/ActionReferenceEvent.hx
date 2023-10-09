@@ -1,16 +1,11 @@
 package com.furusystems.barrage.instancing.events;
 
 import com.furusystems.barrage.data.EventDef;
-import com.furusystems.barrage.data.events.ActionEventDef;
 import com.furusystems.barrage.data.events.ActionReferenceEventDef;
 import com.furusystems.barrage.instancing.events.ITriggerableEvent;
 import com.furusystems.barrage.instancing.RunningAction;
 import com.furusystems.barrage.instancing.RunningBarrage;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class ActionReferenceEvent implements ITriggerableEvent {
 	public var def:ActionReferenceEventDef;
 	public var hasRun:Bool;
