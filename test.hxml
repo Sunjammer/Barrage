@@ -1,2 +1,3 @@
 -lib hscript
 -lib glm
+--class-path src

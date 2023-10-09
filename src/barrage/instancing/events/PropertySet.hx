@@ -1,0 +1,52 @@
+package barrage.instancing.events;
+
+import barrage.data.EventDef;
+import barrage.data.events.PropertySetDef;
+import barrage.instancing.events.ITriggerableEvent;
+import barrage.instancing.RunningAction;
+import barrage.instancing.RunningBarrage;
+
+class PropertySet implements ITriggerableEvent {
+	public var hasRun:Bool;
+	public var def:PropertySetDef;
+
+	public function new(def:EventDef) {
+		this.def = cast def;
+	}
+
+	public inline function trigger(runningAction:RunningAction, runningBarrage:RunningBarrage, delta:Float):Void {
+		if (def.speed != null) {
+			if (def.speed.modifier.has(RELATIVE)) {
+				runningAction.triggeringBullet.speed += def.speed.get(runningBarrage, runningAction);
+			} else {
+				runningAction.triggeringBullet.speed = def.speed.get(runningBarrage, runningAction);
+			}
+		}
+		if (def.direction != null) {
+			var ang:Float = 0;
+			if (def.direction.modifier.has(AIMED)) {
+				var tb = runningAction.triggeringBullet;
+				ang = runningBarrage.emitter.getAngleToPlayer(tb.posX, tb.posY);
+			} else {
+				ang = def.direction.get(runningBarrage, runningAction);
+			}
+			if (def.relative) {
+				runningAction.triggeringBullet.angle += ang;
+			} else {
+				runningAction.triggeringBullet.angle = ang;
+			}
+		}
+		if (def.acceleration != null) {
+			var accel = def.acceleration.get(runningBarrage, runningAction);
+			if (def.relative) {
+				runningAction.triggeringBullet.acceleration += accel;
+			} else {
+				runningAction.triggeringBullet.acceleration = accel;
+			}
+		}
+	}
+
+	public inline function getType():EventType {
+		return def.type;
+	}
+}

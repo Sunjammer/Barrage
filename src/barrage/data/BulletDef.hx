@@ -1,0 +1,17 @@
+package barrage.data;
+
+import barrage.data.properties.Property;
+
+class BulletDef extends BarrageItemDef {
+	public var speed:Property;
+	public var direction:Property;
+	public var acceleration:Property;
+	public var action:Int = -1; // pointers to predefined actions
+
+	public function new(name:String) {
+		super(name);
+		speed = new Property("Speed");
+		direction = new Property("Direction");
+		acceleration = new Property("Acceleration");
+	}
+}
