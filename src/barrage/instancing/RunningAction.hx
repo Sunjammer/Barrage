@@ -7,10 +7,6 @@ import barrage.instancing.events.EventFactory;
 import barrage.instancing.events.ITriggerableEvent;
 import barrage.instancing.RunningBarrage;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class RunningAction {
 	public var def:ActionDef;
 	public var events:Array<ITriggerableEvent>;

@@ -25,7 +25,7 @@ class Barrage {
 		defaultBullet = new BulletDef("Default");
 		defaultBullet.acceleration.set(0);
 		defaultBullet.speed.set(50);
-		frameRate = 60; // default
+		frameRate = 60;
 		executor = new Interp();
 		executor.variables.set("math", Math);
 		executor.variables.set("triangle", tri);

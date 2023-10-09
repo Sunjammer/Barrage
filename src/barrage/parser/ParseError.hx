@@ -1,9 +1,5 @@
 package barrage.parser;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class ParseError {
 	public var lineNo:Int = -1;
 	public var info:String;

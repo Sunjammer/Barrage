@@ -1,9 +1,5 @@
 package barrage.parser;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 enum Token {
 	TBarrage;
 	TVanish;

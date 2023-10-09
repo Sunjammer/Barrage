@@ -7,14 +7,9 @@ import barrage.instancing.animation.Animator;
 import barrage.instancing.events.FireEvent;
 import barrage.instancing.IOrigin;
 import haxe.ds.GenericStack;
-import haxe.ds.Vector.Vector;
 
 typedef Vec2 = {x:Float, y:Float}
 
-/**
- * ...
- * @author Andreas Rønning
- */
 class RunningBarrage {
 	public var owner:Barrage;
 	public var initAction:RunningAction;

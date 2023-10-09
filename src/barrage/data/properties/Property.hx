@@ -1,6 +1,5 @@
 package barrage.data.properties;
 
-import barrage.data.properties.Property.PropertyModifier;
 import barrage.instancing.RunningAction;
 import barrage.instancing.RunningBarrage;
 import haxe.ds.Vector;

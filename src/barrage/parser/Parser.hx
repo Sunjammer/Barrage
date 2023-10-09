@@ -21,10 +21,6 @@ import hscript.Interp;
 
 using Lambda;
 
-/**
- * ...
- * @author Andreas Rønning
- */
 @:allow(barrage.parser.Line)
 @:allow(barrage.parser.Block)
 class Parser {
