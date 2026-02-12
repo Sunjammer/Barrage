@@ -265,11 +265,68 @@ class RunningBarrage {
 		return action;
 	}
 
-	inline function executeActionHandle(handle:ActionHandle, action:RunningAction, delta:Float):Void {
+	function executeActionHandle(handle:ActionHandle, action:RunningAction, delta:Float):Void {
 		if (actionsByHandle[handle] != action) {
 			return;
 		}
-		action.update(this, delta);
+		executeActionHandleVm(handle, action, delta);
+	}
+
+	public function executeActionHandleVm(handle:ActionHandle, action:RunningAction, delta:Float):Void {
+		if (actionsByHandle[handle] != action) {
+			return;
+		}
+		actionStore.actionTime[handle] += delta;
+		actionStore.sleepTime[handle] -= delta;
+		if (actionStore.sleepTime[handle] > 0) {
+			return;
+		}
+
+		setScriptActionTimeVars(actionStore.actionTime[handle]);
+		setScriptRepeatCountVars(actionStore.completedCycles[handle]);
+
+		var processedThisTick = 0;
+		var runEvents = actionStore.runEvents[handle];
+		final eventsPerCycle = action.getEventsPerCycle();
+		while (runEvents < eventsPerCycle) {
+			final instr = action.getInstruction(runEvents++);
+			actionStore.runEvents[handle] = runEvents;
+			action.runVmInstructionPublic(this, instr, delta);
+			processedThisTick++;
+			if (action.isWaitOpcodePublic(instr.opcode)) {
+				break;
+			}
+			if (action.isVmUnrolled() && processedThisTick >= action.getVmCycleInstructionCount()) {
+				break;
+			}
+			if (actionsByHandle[handle] != action) {
+				return;
+			}
+		}
+
+		if (actionsByHandle[handle] != action) {
+			return;
+		}
+
+		if (action.isVmUnrolled()) {
+			final cycleInstructions = action.getVmCycleInstructionCount();
+			if (actionStore.sleepTime[handle] <= 0 && cycleInstructions > 0 && (actionStore.runEvents[handle] % cycleInstructions) == 0) {
+				actionStore.completedCycles[handle]++;
+				if (actionStore.completedCycles[handle] >= action.getVmUnrolledCycles()) {
+					stopAction(action);
+				}
+			}
+			return;
+		}
+
+		if (actionStore.runEvents[handle] == eventsPerCycle && actionStore.sleepTime[handle] <= 0) {
+			actionStore.completedCycles[handle]++;
+			if (!action.isEndlessAction() && actionStore.completedCycles[handle] >= action.getRepeatCountLimit()) {
+				stopAction(action);
+			} else {
+				actionStore.runEvents[handle] = 0;
+			}
+		}
 	}
 
 	public inline function stopAction(action:RunningAction) {

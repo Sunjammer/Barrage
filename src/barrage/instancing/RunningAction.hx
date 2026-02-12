@@ -89,36 +89,7 @@ class RunningAction {
 	}
 
 	public function update(runningBarrage:RunningBarrage, delta:Float):Void {
-		actionTime += delta;
-		sleepTime -= delta;
-		if (sleepTime <= 0) {
-			runningBarrage.setScriptActionTimeVars(actionTime);
-			runningBarrage.setScriptRepeatCountVars(completedCycles);
-			var processedThisTick = 0;
-			while (runEvents < eventsPerCycle) {
-				final instr = compiledAction.instructions[runEvents++];
-				runVmInstruction(runningBarrage, instr, delta);
-				processedThisTick++;
-				if (isWaitOpcode(instr.opcode)) {
-					break;
-				}
-				if (vmUnrolled && processedThisTick >= vmCycleInstructionCount) {
-					break;
-				}
-			}
-			if (vmUnrolled) {
-				if (sleepTime <= 0 && vmCycleInstructionCount > 0 && (runEvents % vmCycleInstructionCount) == 0) {
-					completedCycles++;
-					if (completedCycles >= vmUnrolledCycles) {
-						runningBarrage.stopAction(this);
-					}
-				}
-				return;
-			}
-			if (runEvents == eventsPerCycle && sleepTime <= 0) {
-				repeat(runningBarrage);
-			}
-		}
+		runningBarrage.executeActionHandleVm(stateHandle, this, delta);
 	}
 
 	inline function isWaitOpcode(opcode:Opcode):Bool {
@@ -128,6 +99,42 @@ class RunningAction {
 			default:
 				false;
 		}
+	}
+
+	public inline function isWaitOpcodePublic(opcode:Opcode):Bool {
+		return isWaitOpcode(opcode);
+	}
+
+	public inline function runVmInstructionPublic(runningBarrage:RunningBarrage, instr:Instruction, delta:Float):Void {
+		runVmInstruction(runningBarrage, instr, delta);
+	}
+
+	public inline function getInstruction(index:Int):Instruction {
+		return compiledAction.instructions[index];
+	}
+
+	public inline function getEventsPerCycle():Int {
+		return eventsPerCycle;
+	}
+
+	public inline function isVmUnrolled():Bool {
+		return vmUnrolled;
+	}
+
+	public inline function getVmCycleInstructionCount():Int {
+		return vmCycleInstructionCount;
+	}
+
+	public inline function getVmUnrolledCycles():Int {
+		return vmUnrolledCycles;
+	}
+
+	public inline function getRepeatCountLimit():Int {
+		return repeatCount;
+	}
+
+	public inline function isEndlessAction():Bool {
+		return endless;
 	}
 
 	inline function runVmInstruction(runningBarrage:RunningBarrage, instr:Instruction, delta:Float):Void {
