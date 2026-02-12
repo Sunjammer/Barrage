@@ -67,6 +67,102 @@ The following describes a bullet system where the initial action fires a slow bu
 			# Fire a source bullet directly towards the player 
 			fire source in aimed direction 0
 
+Language Spec (Current)
+========
+
+Indentation + comments
+
+- Indentation is tab-based (`\t`) and defines block structure.
+- Comments start with `#` and can appear inline.
+
+Top-level declarations
+
+- `barrage called <name>`
+- `bullet called <name>`
+- `action called <name>`
+- `target called <alias> is <target expression>`
+
+Supported target expressions
+
+- `player`
+- `parent`
+- `self`
+- `<target alias>` (references a previously declared alias)
+- `nearest bullet where type is <bulletName>`
+
+Action references
+
+- `do <actionName>`
+- Overrides are allowed inside a referenced action block:
+  - `do helper`
+  - `\tmyoverride is 7`
+
+Core statements
+
+- Wait:
+  - `wait <expr> frames`
+  - `wait <expr> seconds`
+- Repeat:
+  - `repeat <expr> times`
+  - `repeat forever`
+- End current bullet:
+  - `die`
+  - `vanish` (alias of `die`)
+- Property initialization (inside `bullet` or `action`):
+  - `<identifier> is <expr>`
+  - `speed is <expr>`
+  - `direction is <expr>`
+  - `acceleration is <expr>`
+- Property set/increment:
+  - `set <speed|direction|acceleration> to <expr|aimed>`
+  - `increment <speed|direction|acceleration> by <expr|aimed>`
+  - Timed variants:
+    - `... over <expr> frames`
+    - `... over <expr> seconds`
+  - Aimed target form:
+    - `set direction to aimed at <targetExpr> [over ...]`
+    - `increment direction by aimed at <targetExpr> [over ...]`
+
+Fire statement
+
+- Base:
+  - `fire <bulletName> ...`
+- Optional clauses (order-independent by 4-token groups):
+  - `at <absolute|relative|incremental> speed <expr>`
+  - `in <absolute|relative|incremental|aimed> direction <expr>`
+  - `in aimed at <targetExpr> direction <expr>`
+  - `from <absolute|relative|incremental|aimed> position <vectorExpr>`
+  - `with <absolute|relative|incremental> acceleration <expr>`
+- If direction is omitted, default is aimed at `player`.
+
+Expressions
+
+- Numeric literals and constant math in parentheses are supported and folded when possible:
+  - `(360/10*0.5)`
+- Script expressions are parenthesized and evaluated natively in the VM.
+- Supported operators: `+`, `-`, `*`, `/`, unary minus.
+- Supported functions (case-insensitive with `Math.` or `math.` prefixes):
+  - `sin`, `cos`, `tan`, `abs`, `sqrt`, `floor`, `ceil`, `round`, `exp`, `log`
+  - `asin`, `acos`, `atan`, `pow`, `min`, `max`, `atan2`
+- Supported constants:
+  - `PI`, `Math.PI`, `math.PI`
+  - `E`, `Math.E`, `math.E`
+- `rand()` is supported and uses Barrage's seeded RNG.
+- Unsupported grammar throws parse errors (for example, `fire x in random direction 0`).
+
+Vector expressions
+
+- Literal vector: `[x,y]`
+- Scripted components: `[(expr),(expr)]`
+- Example:
+  - `from relative position [(repeatCount*10), (1 + repeatCount)]`
+
+Runtime semantics
+
+- `run(...)` uses VM execution and defaults to deterministic RNG (`SeededRng(0)`).
+- `onComplete` fires when action execution finishes.
+- Bullets continue simulating after actions complete; bullet lifetime is independent from script/action lifetime.
+- Runner becomes inactive only after actions are complete and all bullets are gone (or killed externally).
 
 Implementation
 ========
