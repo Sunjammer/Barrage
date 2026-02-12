@@ -6,6 +6,23 @@ private enum NativeToken {
 	TNumber(v:Float);
 	TIdentifier(name:String);
 	TRand;
+	TSin;
+	TCos;
+	TTan;
+	TAbs;
+	TSqrt;
+	TFloor;
+	TCeil;
+	TRound;
+	TExp;
+	TLog;
+	TAsin;
+	TAcos;
+	TAtan;
+	TPow;
+	TMin;
+	TMax;
+	TAtan2;
 	TAdd;
 	TSub;
 	TMul;
@@ -35,6 +52,48 @@ class NativeExpr {
 					stack[top++] = v;
 				case TRand:
 					stack[top++] = ctx.rand();
+				case TSin:
+					stack[top - 1] = Math.sin(stack[top - 1]);
+				case TCos:
+					stack[top - 1] = Math.cos(stack[top - 1]);
+				case TTan:
+					stack[top - 1] = Math.tan(stack[top - 1]);
+				case TAbs:
+					stack[top - 1] = Math.abs(stack[top - 1]);
+				case TSqrt:
+					stack[top - 1] = Math.sqrt(stack[top - 1]);
+				case TFloor:
+					stack[top - 1] = Math.floor(stack[top - 1]);
+				case TCeil:
+					stack[top - 1] = Math.ceil(stack[top - 1]);
+				case TRound:
+					stack[top - 1] = Math.round(stack[top - 1]);
+				case TExp:
+					stack[top - 1] = Math.exp(stack[top - 1]);
+				case TLog:
+					stack[top - 1] = Math.log(stack[top - 1]);
+				case TAsin:
+					stack[top - 1] = Math.asin(stack[top - 1]);
+				case TAcos:
+					stack[top - 1] = Math.acos(stack[top - 1]);
+				case TAtan:
+					stack[top - 1] = Math.atan(stack[top - 1]);
+				case TPow:
+					final b = stack[--top];
+					final a = stack[--top];
+					stack[top++] = Math.pow(a, b);
+				case TMin:
+					final b = stack[--top];
+					final a = stack[--top];
+					stack[top++] = Math.min(a, b);
+				case TMax:
+					final b = stack[--top];
+					final a = stack[--top];
+					stack[top++] = Math.max(a, b);
+				case TAtan2:
+					final b = stack[--top];
+					final a = stack[--top];
+					stack[top++] = Math.atan2(a, b);
 				case TAdd:
 					final b = stack[--top];
 					final a = stack[--top];
@@ -79,6 +138,48 @@ class NativeExpr {
 			switch (t) {
 				case TNumber(v):
 					stack.push(v);
+				case TSin:
+					stack[stack.length - 1] = Math.sin(stack[stack.length - 1]);
+				case TCos:
+					stack[stack.length - 1] = Math.cos(stack[stack.length - 1]);
+				case TTan:
+					stack[stack.length - 1] = Math.tan(stack[stack.length - 1]);
+				case TAbs:
+					stack[stack.length - 1] = Math.abs(stack[stack.length - 1]);
+				case TSqrt:
+					stack[stack.length - 1] = Math.sqrt(stack[stack.length - 1]);
+				case TFloor:
+					stack[stack.length - 1] = Math.floor(stack[stack.length - 1]);
+				case TCeil:
+					stack[stack.length - 1] = Math.ceil(stack[stack.length - 1]);
+				case TRound:
+					stack[stack.length - 1] = Math.round(stack[stack.length - 1]);
+				case TExp:
+					stack[stack.length - 1] = Math.exp(stack[stack.length - 1]);
+				case TLog:
+					stack[stack.length - 1] = Math.log(stack[stack.length - 1]);
+				case TAsin:
+					stack[stack.length - 1] = Math.asin(stack[stack.length - 1]);
+				case TAcos:
+					stack[stack.length - 1] = Math.acos(stack[stack.length - 1]);
+				case TAtan:
+					stack[stack.length - 1] = Math.atan(stack[stack.length - 1]);
+				case TPow:
+					final b = stack.pop();
+					final a = stack.pop();
+					stack.push(Math.pow(a, b));
+				case TMin:
+					final b = stack.pop();
+					final a = stack.pop();
+					stack.push(Math.min(a, b));
+				case TMax:
+					final b = stack.pop();
+					final a = stack.pop();
+					stack.push(Math.max(a, b));
+				case TAtan2:
+					final b = stack.pop();
+					final a = stack.pop();
+					stack.push(Math.atan2(a, b));
 				case TAdd:
 					final b = stack.pop();
 					final a = stack.pop();
@@ -142,119 +243,193 @@ private class NativeExprParser {
 	final source:String;
 	var index:Int = 0;
 	final out:Array<NativeToken> = [];
-	final ops:Array<String> = [];
-	var expectUnary = true;
 
 	public function new(source:String) {
 		this.source = source;
 	}
 
 	public function compile():Array<NativeToken> {
-		while (index < source.length) {
-			final ch = source.charAt(index);
-			if (isSpace(ch)) {
-				index++;
-				continue;
-			}
-			if (isDigit(ch) || ch == ".") {
-				out.push(TNumber(parseNumber()));
-				expectUnary = false;
-				continue;
-			}
-			if (isIdentStart(ch)) {
-				final ident = parseIdentifier();
-				if (ident == "rand" && peekNonSpace() == "(") {
-					index = skipNonSpace(index);
-					if (source.charAt(index) != "(") throw "Invalid rand call";
-					index++;
-					index = skipSpaces(index);
-					if (index >= source.length || source.charAt(index) != ")") throw "rand() takes no args";
-					index++;
-					out.push(TRand);
-				} else {
-					out.push(TIdentifier(ident));
-				}
-				expectUnary = false;
-				continue;
-			}
-			if (ch == "(") {
-				ops.push(ch);
-				index++;
-				expectUnary = true;
-				continue;
-			}
-			if (ch == ")") {
-				while (ops.length > 0 && ops[ops.length - 1] != "(") {
-					popOp();
-				}
-				if (ops.length == 0) throw "Unbalanced parentheses";
-				ops.pop();
-				index++;
-				expectUnary = false;
-				continue;
-			}
-			if (isOperator(ch)) {
-				final op = expectUnary && ch == "-" ? "u-" : ch;
-				while (ops.length > 0 && shouldPopBeforePush(op, ops[ops.length - 1])) {
-					popOp();
-				}
-				ops.push(op);
-				index++;
-				expectUnary = true;
-				continue;
-			}
-			throw "Unsupported token";
-		}
-
-		while (ops.length > 0) {
-			if (ops[ops.length - 1] == "(") throw "Unbalanced parentheses";
-			popOp();
+		parseExpression();
+		skipSpaces();
+		if (index != source.length) {
+			throw "Unsupported trailing token";
 		}
 		return out;
 	}
 
-	function popOp():Void {
-		final op = ops.pop();
-		switch (op) {
-			case "+":
+	function parseExpression():Void {
+		parseTerm();
+		while (true) {
+			skipSpaces();
+			if (match("+")) {
+				parseTerm();
 				out.push(TAdd);
-			case "-":
+			} else if (match("-")) {
+				parseTerm();
 				out.push(TSub);
-			case "*":
+			} else {
+				return;
+			}
+		}
+	}
+
+	function parseTerm():Void {
+		parseUnary();
+		while (true) {
+			skipSpaces();
+			if (match("*")) {
+				parseUnary();
 				out.push(TMul);
-			case "/":
+			} else if (match("/")) {
+				parseUnary();
 				out.push(TDiv);
-			case "u-":
-				out.push(TNeg);
-			default:
-				throw "Unknown operator";
+			} else {
+				return;
+			}
 		}
 	}
 
-	function shouldPopBeforePush(incoming:String, top:String):Bool {
-		if (top == "(") return false;
-		final pTop = precedence(top);
-		final pIn = precedence(incoming);
-		return pTop > pIn || (pTop == pIn && incoming != "u-");
-	}
-
-	function precedence(op:String):Int {
-		return switch (op) {
-			case "u-": 3;
-			case "*", "/": 2;
-			case "+", "-": 1;
-			default: 0;
+	function parseUnary():Void {
+		skipSpaces();
+		if (match("-")) {
+			parseUnary();
+			out.push(TNeg);
+		} else {
+			parsePrimary();
 		}
 	}
 
-	function parseNumber():Float {
-		final start = index;
-		while (index < source.length) {
-			final ch = source.charAt(index);
-			if (!isDigit(ch) && ch != ".") break;
+	function parsePrimary():Void {
+		skipSpaces();
+		if (index >= source.length) {
+			throw "Unexpected end of expression";
+		}
+		final ch = source.charAt(index);
+		if (ch == "(") {
 			index++;
+			parseExpression();
+			skipSpaces();
+			expect(")");
+			return;
 		}
-		return Std.parseFloat(source.substring(start, index));
+		if (isDigit(ch) || ch == ".") {
+			out.push(TNumber(parseNumber()));
+			return;
+		}
+		if (isIdentStart(ch)) {
+			parseIdentifierOrCall();
+			return;
+		}
+		throw "Unsupported token";
+	}
+
+	function parseIdentifierOrCall():Void {
+		final name = parseIdentifier();
+		skipSpaces();
+		if (match("(")) {
+			parseCall(name);
+			return;
+		}
+		final constant = resolveConstant(name);
+		if (constant != null) {
+			out.push(TNumber(constant));
+			return;
+		}
+		out.push(TIdentifier(name));
+	}
+
+	function parseCall(name:String):Void {
+		final lowered = name.toLowerCase();
+		if (match(")")) {
+			if (lowered == "rand" || lowered == "math.random") {
+				out.push(TRand);
+				return;
+			}
+			throw "Unsupported zero-arg function";
+		}
+		var argc = 0;
+		while (true) {
+			parseExpression();
+			argc++;
+			skipSpaces();
+			if (match(",")) {
+				continue;
+			}
+			expect(")");
+			break;
+		}
+		switch (lowered) {
+			case "sin", "math.sin":
+				ensureArity(argc, 1, name);
+				out.push(TSin);
+			case "cos", "math.cos":
+				ensureArity(argc, 1, name);
+				out.push(TCos);
+			case "tan", "math.tan":
+				ensureArity(argc, 1, name);
+				out.push(TTan);
+			case "abs", "math.abs":
+				ensureArity(argc, 1, name);
+				out.push(TAbs);
+			case "sqrt", "math.sqrt":
+				ensureArity(argc, 1, name);
+				out.push(TSqrt);
+			case "floor", "math.floor":
+				ensureArity(argc, 1, name);
+				out.push(TFloor);
+			case "ceil", "math.ceil":
+				ensureArity(argc, 1, name);
+				out.push(TCeil);
+			case "round", "math.round":
+				ensureArity(argc, 1, name);
+				out.push(TRound);
+			case "exp", "math.exp":
+				ensureArity(argc, 1, name);
+				out.push(TExp);
+			case "log", "math.log":
+				ensureArity(argc, 1, name);
+				out.push(TLog);
+			case "asin", "math.asin":
+				ensureArity(argc, 1, name);
+				out.push(TAsin);
+			case "acos", "math.acos":
+				ensureArity(argc, 1, name);
+				out.push(TAcos);
+			case "atan", "math.atan":
+				ensureArity(argc, 1, name);
+				out.push(TAtan);
+			case "pow", "math.pow":
+				ensureArity(argc, 2, name);
+				out.push(TPow);
+			case "min", "math.min":
+				ensureArity(argc, 2, name);
+				out.push(TMin);
+			case "max", "math.max":
+				ensureArity(argc, 2, name);
+				out.push(TMax);
+			case "atan2", "math.atan2":
+				ensureArity(argc, 2, name);
+				out.push(TAtan2);
+			default:
+				throw "Unsupported function call";
+		}
+	}
+
+	inline function ensureArity(actual:Int, expected:Int, name:String):Void {
+		if (actual != expected) {
+			throw name + " expects " + expected + " args";
+		}
+	}
+
+	function resolveConstant(name:String):Null<Float> {
+		return switch (name) {
+			case "PI", "Math.PI", "math.PI":
+				Math.PI;
+			case "E", "Math.E", "math.E":
+				Math.exp(1);
+			default:
+				null;
+		}
 	}
 
 	function parseIdentifier():String {
@@ -268,19 +443,35 @@ private class NativeExprParser {
 		return source.substring(start, index);
 	}
 
-	function peekNonSpace():String {
-		final i = skipNonSpace(index);
-		return i < source.length ? source.charAt(i) : "";
+	function parseNumber():Float {
+		final start = index;
+		while (index < source.length) {
+			final ch = source.charAt(index);
+			if (!isDigit(ch) && ch != ".") break;
+			index++;
+		}
+		return Std.parseFloat(source.substring(start, index));
 	}
 
-	function skipNonSpace(i:Int):Int {
-		var idx = i;
-		while (idx < source.length && isSpace(source.charAt(idx))) idx++;
-		return idx;
+	inline function skipSpaces():Void {
+		while (index < source.length && isSpace(source.charAt(index))) {
+			index++;
+		}
 	}
 
-	function skipSpaces(i:Int):Int {
-		return skipNonSpace(i);
+	inline function match(token:String):Bool {
+		skipSpaces();
+		if (source.substr(index, token.length) == token) {
+			index += token.length;
+			return true;
+		}
+		return false;
+	}
+
+	inline function expect(token:String):Void {
+		if (!match(token)) {
+			throw "Expected " + token;
+		}
 	}
 
 	inline function isSpace(ch:String):Bool {
@@ -296,10 +487,6 @@ private class NativeExprParser {
 	}
 
 	inline function isIdentPart(ch:String):Bool {
-		return isIdentStart(ch) || isDigit(ch);
-	}
-
-	inline function isOperator(ch:String):Bool {
-		return ch == "+" || ch == "-" || ch == "*" || ch == "/";
+		return isIdentStart(ch) || isDigit(ch) || ch == ".";
 	}
 }

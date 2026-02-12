@@ -55,6 +55,7 @@ class TestMain {
 		#if barrage_profile
 		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
 		#end
+		failures += run("VM strict native supports Math functions", testVmStrictNativeMathFunctions);
 		failures += run("VM strict native mode rejects unsupported expressions", testVmStrictNativeExpressionMode);
 		#if barrage_legacy
 		failures += run("VM execution parity with legacy runtime", testVmParity);
@@ -608,6 +609,22 @@ class TestMain {
 
 		final relaxedRunner = barrage.runVm(new MockEmitter(), 1.0, 1.0, new SeededRng(1), false);
 		relaxedRunner.start();
+	}
+
+	static function testVmStrictNativeMathFunctions():Void {
+		final source =
+			"barrage called strict_native_math\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is (Math.sin(0) + math.cos(0) * 10 + Math.pow(2,3) + Math.min(5,2) + Math.max(1,4) + Math.sqrt(9) + Math.PI*0)\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction (Math.atan2(0,1) + Math.abs(-5) - 5)\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final vm = barrage.runVm(emitter, 1.0, 1.0, new SeededRng(1), true);
+		vm.start();
+		assertIntEquals(1, emitter.emitCount, "Expected one emitted bullet.");
+		assertFloatEquals(27, emitter.speeds[0], 1e-6, "Expected native math expression to evaluate speed.");
+		assertFloatEquals(0, emitter.angles[0], 1e-6, "Expected native math expression to evaluate direction.");
 	}
 
 	#if barrage_legacy
