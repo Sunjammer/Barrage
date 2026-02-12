@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Barrage IDE Preview</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a222b;
+      --panel2: #212c38;
+      --text: #d6e2f0;
+      --muted: #8ca0b5;
+      --accent: #58c4ff;
+      --error: #ff7f7f;
+      --ok: #8df0a7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 0%, #19232d, var(--bg));
+      color: var(--text);
+      font: 14px/1.35 Consolas, "Cascadia Mono", Menlo, monospace;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 44% 56%;
+      height: 100vh;
+      gap: 10px;
+      padding: 10px;
+    }
+    .panel {
+      background: linear-gradient(170deg, var(--panel2), var(--panel));
+      border: 1px solid #2f3b47;
+      border-radius: 10px;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      border-bottom: 1px solid #2f3b47;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .toolbar label { color: var(--muted); }
+    .toolbar input, .toolbar select, .toolbar button {
+      background: #0f161e;
+      color: var(--text);
+      border: 1px solid #3a4652;
+      border-radius: 6px;
+      padding: 5px 8px;
+      font: inherit;
+    }
+    .toolbar button {
+      cursor: pointer;
+      border-color: #4a5a69;
+    }
+    .editorStack {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+    }
+    #highlight {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      padding: 10px;
+      overflow: auto;
+      pointer-events: none;
+      tab-size: 2;
+      white-space: pre;
+      color: var(--text);
+      font: inherit;
+    }
+    #highlight .kw { color: #7cc5ff; }
+    #highlight .num { color: #ffd479; }
+    #highlight .expr { color: #8df0a7; }
+    #highlight .com { color: #8ca0b5; }
+    textarea {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: transparent;
+      color: transparent;
+      caret-color: var(--text);
+      resize: none;
+      outline: none;
+      padding: 10px;
+      font: inherit;
+      tab-size: 2;
+      white-space: pre;
+      overflow: auto;
+    }
+    #canvasWrap {
+      position: relative;
+      min-height: 0;
+      flex: 1;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: #0b1016;
+    }
+    #status {
+      padding: 8px 10px;
+      border-top: 1px solid #2f3b47;
+      color: var(--muted);
+      min-height: 38px;
+      white-space: pre-wrap;
+    }
+    .ok { color: var(--ok); }
+    .error { color: var(--error); }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      .panel { min-height: 40vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <section class="panel">
+      <div class="toolbar">
+        <label for="preset">Preset</label>
+        <select id="preset"></select>
+        <button id="loadPreset">Load</button>
+        <button id="rebuild">Rebuild</button>
+      </div>
+      <div class="editorStack">
+        <pre id="highlight" aria-hidden="true"></pre>
+        <textarea id="editor" spellcheck="false"></textarea>
+      </div>
+      <div id="status">Ready.</div>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <button id="playPause">Pause</button>
+        <button id="step">Step</button>
+        <button id="reset">Reset</button>
+        <label for="seed">Seed</label>
+        <input id="seed" type="number" value="1" />
+        <label for="speed">Speed</label>
+        <input id="speed" type="number" min="0.1" step="0.1" value="1.0" />
+      </div>
+      <div id="canvasWrap">
+        <canvas id="preview" width="960" height="720"></canvas>
+      </div>
+    </section>
+  </div>
+  <script src="./dist/app.js"></script>
+</body>
+</html>

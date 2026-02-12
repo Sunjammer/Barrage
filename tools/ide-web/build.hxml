@@ -1,0 +1,5 @@
+-lib hscript
+-cp ../../src
+-cp src
+-main ide.Main
+-js dist/app.js
