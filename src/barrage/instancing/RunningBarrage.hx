@@ -145,6 +145,7 @@ class RunningBarrage {
 				profile.actionSeconds += Timer.stamp() - tActions;
 			#end
 		}
+		simulateBullets(delta);
 		#if barrage_profile
 		profile.updateTicks++;
 		profile.updateSeconds += Timer.stamp() - tUpdate;
@@ -158,14 +159,22 @@ class RunningBarrage {
 		var i = bullets.length;
 		while (i-- > 0) {
 			final handle = bullets[i];
-			bulletStore.syncFromExternal(handle);
-			if (!bulletStore.isActive(handle)) {
+			if (!bulletStore.isActive(handle) || !bulletStore.getSource(handle).active) {
 				bulletStore.release(handle);
 				final last = bullets.pop();
 				if (i < bullets.length) {
 					bullets[i] = last;
 				}
 			}
+		}
+	}
+
+	inline function simulateBullets(delta:Float):Void {
+		for (handle in bullets) {
+			if (!bulletStore.isActive(handle)) {
+				continue;
+			}
+			bulletStore.stepHandle(handle, delta);
 		}
 	}
 
@@ -248,6 +257,21 @@ class RunningBarrage {
 			return getAngleToTarget(origin.x, origin.y, runningAction, prop.target) + other;
 		} else if (prop.modifier.has(RANDOM)) {
 			return runningBarrage.randomAngle() + other;
+		} else {
+			return other;
+		}
+	}
+
+	function applyPropertyConst(origin:Vec2, base:Float, prev:Float, prop:Property, runningAction:RunningAction):Float {
+		var other = prop.constValue;
+		if (prop.modifier.has(INCREMENTAL)) {
+			return prev + other;
+		} else if (prop.modifier.has(RELATIVE)) {
+			return base + other;
+		} else if (prop.modifier.has(AIMED)) {
+			return getAngleToTarget(origin.x, origin.y, runningAction, prop.target) + other;
+		} else if (prop.modifier.has(RANDOM)) {
+			return randomAngle() + other;
 		} else {
 			return other;
 		}
@@ -497,6 +521,80 @@ class RunningBarrage {
 		return lastBulletFired;
 	}
 
+	public function fireDefConst(action:RunningAction, eventDef:FireEventDef, bulletID:Int, delta:Float):IBarrageBullet {
+		var bd:BulletDef = bulletID == -1 ? owner.defaultBullet : owner.bullets[bulletID];
+		var origin = getOrigin(action);
+
+		var baseSpeed:Float = bd.speed.scripted ? bd.speed.get(this, action) : bd.speed.constValue;
+		var baseAccel:Float = bd.acceleration.scripted ? bd.acceleration.get(this, action) : bd.acceleration.constValue;
+		var baseDirection:Float = 0;
+		var basePosition = basePositionVec;
+
+		var lastSpeed = action.prevSpeed;
+		var lastDirection = action.prevAngle;
+		var lastAcceleration = action.prevAccel;
+		var lastPositionX = action.prevPositionX;
+		var lastPositionY = action.prevPositionY;
+
+		basePosition.x = origin.posX;
+		basePosition.y = origin.posY;
+		if (eventDef.position != null) {
+			var vec = eventDef.position.constValueVec;
+			if (eventDef.position.modifier.has(RELATIVE)) {
+				basePosition.x = origin.posX + vec[0];
+				basePosition.y = origin.posY + vec[1];
+			} else if (eventDef.position.modifier.has(INCREMENTAL)) {
+				basePosition.x = lastPositionX + vec[0];
+				basePosition.y = lastPositionY + vec[1];
+			}
+		}
+
+		if (bd == owner.defaultBullet) {
+			baseDirection = emitter.getAngleToPlayer(basePosition.x, basePosition.y);
+		} else {
+			baseDirection = bd.direction.scripted ? bd.direction.get(this, action) : bd.direction.constValue;
+		}
+
+		if (eventDef.speed != null) {
+			baseSpeed = applyPropertyConst(basePosition, baseSpeed, lastSpeed, eventDef.speed, action);
+		}
+		if (eventDef.acceleration != null) {
+			baseAccel = applyPropertyConst(basePosition, baseAccel, lastAcceleration, eventDef.acceleration, action);
+		}
+		if (eventDef.direction != null) {
+			baseDirection = applyPropertyConst(basePosition, baseDirection, lastDirection, eventDef.direction, action);
+			if (eventDef.direction.modifier.has(RELATIVE)) {
+				baseDirection = action.triggeringBullet.angle + baseDirection;
+			}
+		}
+
+		action.prevSpeed = baseSpeed;
+		action.prevAngle = baseDirection;
+		action.prevAccel = baseAccel;
+		action.prevPositionX = basePosition.x;
+		action.prevPositionY = basePosition.y;
+
+		var spd = baseSpeed * speedScale;
+		final emitted = emitter.emit(action.prevPositionX, action.prevPositionY, baseDirection, spd, baseAccel * accelScale, delta);
+		emitted.id = bulletID;
+		emitted.speed = spd;
+		emitted.angle = baseDirection;
+		final handle = bulletStore.alloc(emitted, bulletID);
+		lastBulletFired = bulletStore.getSource(handle);
+		bullets.push(handle);
+		#if barrage_profile
+		profile.bulletsSpawned++;
+		#end
+		if (bulletID >= 0) {
+			if (bulletsByDef[bulletID] == null) {
+				bulletsByDef[bulletID] = [];
+			}
+			bulletsByDef[bulletID].push(handle);
+			spatialTickByType[bulletID] = -1;
+		}
+		return lastBulletFired;
+	}
+
 	public function killBullet(bullet:IBarrageBullet):Void {
 		final handle = getHandleForBullet(bullet);
 		if (handle != BulletHandle.INVALID) {
@@ -532,5 +630,32 @@ class RunningBarrage {
 			return;
 		}
 		tweenStore.retargetAcceleration(handle, bulletStore.getAcceleration(handle), target, duration, initDelta);
+	}
+
+	public inline function setBulletSpeed(bullet:IBarrageBullet, value:Float):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle != BulletHandle.INVALID) {
+			bulletStore.setSpeed(handle, value);
+		} else {
+			bullet.speed = value;
+		}
+	}
+
+	public inline function setBulletAngle(bullet:IBarrageBullet, value:Float):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle != BulletHandle.INVALID) {
+			bulletStore.setAngle(handle, value);
+		} else {
+			bullet.angle = value;
+		}
+	}
+
+	public inline function setBulletAcceleration(bullet:IBarrageBullet, value:Float):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle != BulletHandle.INVALID) {
+			bulletStore.setAcceleration(handle, value);
+		} else {
+			bullet.acceleration = value;
+		}
 	}
 }

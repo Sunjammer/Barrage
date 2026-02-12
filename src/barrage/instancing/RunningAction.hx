@@ -12,6 +12,7 @@ import barrage.data.events.WaitDef;
 import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
 import barrage.ir.CompiledAction;
+import barrage.ir.Instruction;
 import barrage.ir.Opcode;
  #if barrage_legacy
 import barrage.instancing.events.ITriggerableEvent;
@@ -134,9 +135,9 @@ class RunningAction {
 					var processedThisTick = 0;
 					while (runEvents < eventsPerCycle) {
 						final instr = compiledAction.instructions[runEvents++];
-						runVmInstruction(runningBarrage, instr.opcode, instr.eventIndex, delta);
+						runVmInstruction(runningBarrage, instr, delta);
 						processedThisTick++;
-						if (instr.opcode == Opcode.WAIT) {
+						if (isWaitOpcode(instr.opcode)) {
 							break;
 						}
 						if (vmUnrolled && processedThisTick >= vmCycleInstructionCount) {
@@ -178,22 +179,49 @@ class RunningAction {
 	}
 	#end
 
-	inline function runVmInstruction(runningBarrage:RunningBarrage, opcode:Opcode, eventIndex:Int, delta:Float):Void {
-		switch (opcode) {
+	inline function isWaitOpcode(opcode:Opcode):Bool {
+		return switch (opcode) {
+			case WAIT | WAIT_SECONDS_CONST | WAIT_FRAMES_CONST:
+				true;
+			default:
+				false;
+		}
+	}
+
+	inline function runVmInstruction(runningBarrage:RunningBarrage, instr:Instruction, delta:Float):Void {
+		switch (instr.opcode) {
 			case WAIT:
-				vmWait(runningBarrage, cast def.events[eventIndex]);
+				vmWait(runningBarrage, cast def.events[instr.eventIndex]);
+			case WAIT_SECONDS_CONST:
+				sleepTime += instr.immF0;
+			case WAIT_FRAMES_CONST:
+				sleepTime += instr.immF0;
 			case FIRE:
-				vmFire(runningBarrage, cast def.events[eventIndex], delta);
+				vmFire(runningBarrage, cast def.events[instr.eventIndex], delta);
+			case FIRE_CONST:
+				vmFireConst(runningBarrage, cast def.events[instr.eventIndex], delta);
 			case PROPERTY_SET:
-				vmPropertySet(runningBarrage, cast def.events[eventIndex]);
+				vmPropertySet(runningBarrage, cast def.events[instr.eventIndex]);
+			case PROPERTY_SET_SPEED_CONST:
+				vmPropertySetSpeedConst(runningBarrage, instr.immF0, instr.immI0 != 0);
+			case PROPERTY_SET_DIRECTION_CONST:
+				vmPropertySetDirectionConst(runningBarrage, instr.immF0, instr.immI0 != 0);
+			case PROPERTY_SET_ACCEL_CONST:
+				vmPropertySetAccelConst(runningBarrage, instr.immF0, instr.immI0 != 0);
 			case PROPERTY_TWEEN:
-				vmPropertyTween(runningBarrage, cast def.events[eventIndex], delta);
+				vmPropertyTween(runningBarrage, cast def.events[instr.eventIndex], delta);
+			case PROPERTY_TWEEN_SPEED_CONST:
+				vmPropertyTweenSpeedConst(runningBarrage, instr.immF0, instr.immF1, instr.immI0 != 0, delta);
+			case PROPERTY_TWEEN_DIRECTION_CONST:
+				vmPropertyTweenDirectionConst(runningBarrage, instr.immF0, instr.immF1, instr.immI0 != 0, delta);
+			case PROPERTY_TWEEN_ACCEL_CONST:
+				vmPropertyTweenAccelConst(runningBarrage, instr.immF0, instr.immF1, instr.immI0 != 0, delta);
 			case ACTION:
-				vmAction(runningBarrage, cast def.events[eventIndex], delta);
+				vmAction(runningBarrage, cast def.events[instr.eventIndex], delta);
 			case ACTION_REF:
-				vmActionRef(runningBarrage, cast def.events[eventIndex], delta);
+				vmActionRef(runningBarrage, cast def.events[instr.eventIndex], delta);
 			case DIE:
-				vmDie(runningBarrage, cast def.events[eventIndex]);
+				vmDie(runningBarrage, cast def.events[instr.eventIndex]);
 		}
 	}
 
@@ -223,13 +251,24 @@ class RunningAction {
 		}
 	}
 
+	inline function vmFireConst(runningBarrage:RunningBarrage, fireDef:FireEventDef, delta:Float):Void {
+		final bulletID = fireDef.bulletID;
+		currentBullet = runningBarrage.fireDefConst(this, fireDef, bulletID, delta);
+		if (bulletID != -1) {
+			final bd = runningBarrage.owner.bullets[bulletID];
+			if (bd.action != -1) {
+				runningBarrage.runActionByID(this, bd.action, currentBullet);
+			}
+		}
+	}
+
 	inline function vmPropertySet(runningBarrage:RunningBarrage, d:PropertySetDef):Void {
 		final bullet = triggeringBullet;
 		if (d.speed != null) {
 			if (d.speed.modifier.has(RELATIVE)) {
-				bullet.speed += d.speed.get(runningBarrage, this);
+				runningBarrage.setBulletSpeed(bullet, bullet.speed + d.speed.get(runningBarrage, this));
 			} else {
-				bullet.speed = d.speed.get(runningBarrage, this);
+				runningBarrage.setBulletSpeed(bullet, d.speed.get(runningBarrage, this));
 			}
 		}
 		if (d.direction != null) {
@@ -240,19 +279,34 @@ class RunningAction {
 				ang = d.direction.get(runningBarrage, this);
 			}
 			if (d.relative) {
-				bullet.angle += ang;
+				runningBarrage.setBulletAngle(bullet, bullet.angle + ang);
 			} else {
-				bullet.angle = ang;
+				runningBarrage.setBulletAngle(bullet, ang);
 			}
 		}
 		if (d.acceleration != null) {
 			final accel = d.acceleration.get(runningBarrage, this);
 			if (d.relative) {
-				bullet.acceleration += accel;
+				runningBarrage.setBulletAcceleration(bullet, bullet.acceleration + accel);
 			} else {
-				bullet.acceleration = accel;
+				runningBarrage.setBulletAcceleration(bullet, accel);
 			}
 		}
+	}
+
+	inline function vmPropertySetSpeedConst(runningBarrage:RunningBarrage, v:Float, relative:Bool):Void {
+		final bullet = triggeringBullet;
+		runningBarrage.setBulletSpeed(bullet, relative ? bullet.speed + v : v);
+	}
+
+	inline function vmPropertySetDirectionConst(runningBarrage:RunningBarrage, v:Float, relative:Bool):Void {
+		final bullet = triggeringBullet;
+		runningBarrage.setBulletAngle(bullet, relative ? bullet.angle + v : v);
+	}
+
+	inline function vmPropertySetAccelConst(runningBarrage:RunningBarrage, v:Float, relative:Bool):Void {
+		final bullet = triggeringBullet;
+		runningBarrage.setBulletAcceleration(bullet, relative ? bullet.acceleration + v : v);
 	}
 
 	inline function vmPropertyTween(runningBarrage:RunningBarrage, d:PropertyTweenDef, delta:Float):Void {
@@ -289,6 +343,27 @@ class RunningAction {
 			if (d.relative) accel = bullet.acceleration + accel;
 			runningBarrage.retargetAcceleration(bullet, accel, tweenTime, delta);
 		}
+	}
+
+	inline function vmPropertyTweenSpeedConst(runningBarrage:RunningBarrage, value:Float, tweenTime:Float, relative:Bool, delta:Float):Void {
+		final bullet = triggeringBullet;
+		var v = value;
+		if (relative) v = bullet.speed + v;
+		runningBarrage.retargetSpeed(bullet, v, tweenTime, delta);
+	}
+
+	inline function vmPropertyTweenDirectionConst(runningBarrage:RunningBarrage, value:Float, tweenTime:Float, relative:Bool, delta:Float):Void {
+		final bullet = triggeringBullet;
+		var ang = value;
+		if (relative) ang = bullet.angle + ang;
+		runningBarrage.retargetAngle(bullet, ang, tweenTime, delta);
+	}
+
+	inline function vmPropertyTweenAccelConst(runningBarrage:RunningBarrage, value:Float, tweenTime:Float, relative:Bool, delta:Float):Void {
+		final bullet = triggeringBullet;
+		var accel = value;
+		if (relative) accel = bullet.acceleration + accel;
+		runningBarrage.retargetAcceleration(bullet, accel, tweenTime, delta);
 	}
 
 	inline function vmAction(runningBarrage:RunningBarrage, d:ActionEventDef, delta:Float):Void {

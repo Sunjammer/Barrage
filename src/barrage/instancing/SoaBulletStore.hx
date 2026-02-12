@@ -20,6 +20,8 @@ class SoaBulletStore {
 	public var acceleration:Array<Float>;
 	public var velocityX:Array<Float>;
 	public var velocityY:Array<Float>;
+	public var dirX:Array<Float>;
+	public var dirY:Array<Float>;
 	public var active:Array<Bool>;
 	public var typeId:Array<Int>;
 	public var generation:Array<Int>;
@@ -36,6 +38,8 @@ class SoaBulletStore {
 		acceleration = [];
 		velocityX = [];
 		velocityY = [];
+		dirX = [];
+		dirY = [];
 		active = [];
 		typeId = [];
 		generation = [];
@@ -54,6 +58,9 @@ class SoaBulletStore {
 			acceleration.push(bullet.acceleration);
 			velocityX.push(bullet.velocityX);
 			velocityY.push(bullet.velocityY);
+			final rad = bullet.angle * Math.PI / 180;
+			dirX.push(Math.cos(rad));
+			dirY.push(Math.sin(rad));
 			active.push(bullet.active);
 			typeId.push(bulletTypeId);
 			generation.push(0);
@@ -66,6 +73,9 @@ class SoaBulletStore {
 			acceleration[idx] = bullet.acceleration;
 			velocityX[idx] = bullet.velocityX;
 			velocityY[idx] = bullet.velocityY;
+			final rad = bullet.angle * Math.PI / 180;
+			dirX[idx] = Math.cos(rad);
+			dirY[idx] = Math.sin(rad);
 			active[idx] = bullet.active;
 			typeId[idx] = bulletTypeId;
 			generation[idx] = generation[idx] + 1;
@@ -108,12 +118,32 @@ class SoaBulletStore {
 
 	public inline function setSpeed(handle:BulletHandle, value:Float):Void {
 		speed[handle] = value;
-		source[handle].speed = value;
+		final vx = dirX[handle] * value;
+		final vy = dirY[handle] * value;
+		velocityX[handle] = vx;
+		velocityY[handle] = vy;
+		final b = source[handle];
+		b.speed = value;
+		b.velocityX = vx;
+		b.velocityY = vy;
 	}
 
 	public inline function setAngle(handle:BulletHandle, value:Float):Void {
 		angle[handle] = value;
-		source[handle].angle = value;
+		final rad = value * Math.PI / 180;
+		final dx = Math.cos(rad);
+		final dy = Math.sin(rad);
+		dirX[handle] = dx;
+		dirY[handle] = dy;
+		final spd = speed[handle];
+		final vx = dx * spd;
+		final vy = dy * spd;
+		velocityX[handle] = vx;
+		velocityY[handle] = vy;
+		final b = source[handle];
+		b.angle = value;
+		b.velocityX = vx;
+		b.velocityY = vy;
 	}
 
 	public inline function setAcceleration(handle:BulletHandle, value:Float):Void {
@@ -121,8 +151,29 @@ class SoaBulletStore {
 		source[handle].acceleration = value;
 	}
 
+	public inline function stepHandle(handle:BulletHandle, delta:Float):Void {
+		var spd = speed[handle] + acceleration[handle] * delta;
+		speed[handle] = spd;
+		final vx = dirX[handle] * spd;
+		final vy = dirY[handle] * spd;
+		velocityX[handle] = vx;
+		velocityY[handle] = vy;
+		final x = posX[handle] + vx * delta;
+		final y = posY[handle] + vy * delta;
+		posX[handle] = x;
+		posY[handle] = y;
+
+		final b = source[handle];
+		b.speed = spd;
+		b.velocityX = vx;
+		b.velocityY = vy;
+		b.posX = x;
+		b.posY = y;
+	}
+
 	public inline function syncFromExternal(handle:BulletHandle):Void {
 		final b = source[handle];
+		final prevAngle = angle[handle];
 		posX[handle] = b.posX;
 		posY[handle] = b.posY;
 		speed[handle] = b.speed;
@@ -130,6 +181,15 @@ class SoaBulletStore {
 		acceleration[handle] = b.acceleration;
 		velocityX[handle] = b.velocityX;
 		velocityY[handle] = b.velocityY;
+		final spd = b.speed;
+		if (Math.abs(spd) > 1e-9) {
+			dirX[handle] = b.velocityX / spd;
+			dirY[handle] = b.velocityY / spd;
+		} else if (b.angle != prevAngle) {
+			final rad = b.angle * Math.PI / 180;
+			dirX[handle] = Math.cos(rad);
+			dirY[handle] = Math.sin(rad);
+		}
 		active[handle] = b.active;
 	}
 

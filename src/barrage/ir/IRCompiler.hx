@@ -8,6 +8,7 @@ import barrage.data.events.PropertySetDef;
 import barrage.data.events.PropertyTweenDef;
 import barrage.data.events.WaitDef;
 import barrage.data.properties.Property;
+import barrage.data.properties.DurationType;
 import barrage.script.ScriptValue;
 
 class IRCompiler {
@@ -23,7 +24,7 @@ class IRCompiler {
 			optimizeAction(action);
 			final baseInstructions = new Array<Instruction>();
 			for (i in 0...action.events.length) {
-				baseInstructions.push(new Instruction(mapEventType(action.events[i].type), i));
+				baseInstructions.push(compileInstruction(action.events[i].type, action.events[i], i, barrage.frameRate));
 			}
 
 			var instructions = baseInstructions;
@@ -35,7 +36,7 @@ class IRCompiler {
 				instructions = new Array<Instruction>();
 				for (_ in 0...unrollCount) {
 					for (instr in baseInstructions) {
-						instructions.push(new Instruction(instr.opcode, instr.eventIndex));
+						instructions.push(new Instruction(instr.opcode, instr.eventIndex, instr.immF0, instr.immF1, instr.immI0));
 					}
 				}
 				repeatOverride = 1;
@@ -192,22 +193,65 @@ class IRCompiler {
 		return s != null && s.source != null && s.source.toLowerCase().indexOf(needle) >= 0;
 	}
 
-	static function mapEventType(eventType:EventType):Opcode {
+	static function compileInstruction(eventType:EventType, event:Dynamic, eventIndex:Int, frameRate:Int):Instruction {
 		return switch (eventType) {
 			case WAIT:
-				WAIT;
+				final d:WaitDef = cast event;
+				if (!d.scripted) {
+					switch (d.durationType) {
+						case SECONDS:
+							new Instruction(WAIT_SECONDS_CONST, eventIndex, d.waitTime);
+						case FRAMES:
+							new Instruction(WAIT_FRAMES_CONST, eventIndex, d.waitTime * (1 / frameRate));
+					}
+				} else {
+					new Instruction(WAIT, eventIndex);
+				}
 			case FIRE:
-				FIRE;
+				final d:FireEventDef = cast event;
+				if (canUseConstFire(d)) new Instruction(FIRE_CONST, eventIndex) else new Instruction(FIRE, eventIndex);
 			case PROPERTY_SET:
-				PROPERTY_SET;
+				final d:PropertySetDef = cast event;
+				if (d.speed != null && !d.speed.scripted) {
+					new Instruction(PROPERTY_SET_SPEED_CONST, eventIndex, d.speed.constValue, 0.0, d.speed.modifier.has(RELATIVE) ? 1 : 0);
+				} else if (d.direction != null && !d.direction.scripted && !d.direction.modifier.has(AIMED)) {
+					new Instruction(PROPERTY_SET_DIRECTION_CONST, eventIndex, d.direction.constValue, 0.0, d.relative ? 1 : 0);
+				} else if (d.acceleration != null && !d.acceleration.scripted) {
+					new Instruction(PROPERTY_SET_ACCEL_CONST, eventIndex, d.acceleration.constValue, 0.0, d.relative ? 1 : 0);
+				} else {
+					new Instruction(PROPERTY_SET, eventIndex);
+				}
 			case PROPERTY_TWEEN:
-				PROPERTY_TWEEN;
+				final d:PropertyTweenDef = cast event;
+				if (!d.scripted) {
+					final tweenSeconds = d.durationType == FRAMES ? d.tweenTime * (1 / frameRate) : d.tweenTime;
+					if (d.speed != null && !d.speed.scripted) {
+						new Instruction(PROPERTY_TWEEN_SPEED_CONST, eventIndex, d.speed.constValue, tweenSeconds, d.relative ? 1 : 0);
+					} else if (d.direction != null && !d.direction.scripted && !d.direction.modifier.has(AIMED)) {
+						new Instruction(PROPERTY_TWEEN_DIRECTION_CONST, eventIndex, d.direction.constValue, tweenSeconds, d.relative ? 1 : 0);
+					} else if (d.acceleration != null && !d.acceleration.scripted) {
+						new Instruction(PROPERTY_TWEEN_ACCEL_CONST, eventIndex, d.acceleration.constValue, tweenSeconds, d.relative ? 1 : 0);
+					} else {
+						new Instruction(PROPERTY_TWEEN, eventIndex);
+					}
+				} else {
+					new Instruction(PROPERTY_TWEEN, eventIndex);
+				}
 			case ACTION:
-				ACTION;
+				new Instruction(ACTION, eventIndex);
 			case ACTION_REF:
-				ACTION_REF;
+				new Instruction(ACTION_REF, eventIndex);
 			case DIE:
-				DIE;
+				new Instruction(DIE, eventIndex);
 		}
+	}
+
+	static inline function canUseConstFire(d:FireEventDef):Bool {
+		if (d == null) return false;
+		if (d.speed != null && d.speed.scripted) return false;
+		if (d.acceleration != null && d.acceleration.scripted) return false;
+		if (d.direction != null && d.direction.scripted) return false;
+		if (d.position != null && (d.position.scripted || d.position.vectorScripted)) return false;
+		return true;
 	}
 }

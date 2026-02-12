@@ -368,13 +368,6 @@ private class PreviewEmitter implements IBulletEmitter {
 	public function update(dt:Float):Void {
 		for (b in bullets) {
 			if (!b.active) continue;
-			b.speed += b.acceleration * dt;
-			final a = b.angle * Math.PI / 180.0;
-			b.velocityX = Math.cos(a) * b.speed;
-			b.velocityY = Math.sin(a) * b.speed;
-			b.posX += b.velocityX * dt;
-			b.posY += b.velocityY * dt;
-
 			final outOfBounds = Math.abs(b.posX) > cullHalfW || Math.abs(b.posY) > cullHalfH;
 			if (outOfBounds) {
 				b.offscreenTime += dt;

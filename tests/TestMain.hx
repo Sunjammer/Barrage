@@ -10,6 +10,7 @@ import barrage.data.events.PropertyTweenDef;
 import barrage.data.events.WaitDef;
 import barrage.data.properties.DurationType;
 import barrage.ir.CompiledBarrage;
+import barrage.ir.Opcode;
 import barrage.parser.ParseError;
 import barrage.data.targets.TargetSelector;
 import barrage.instancing.IBarrageBullet;
@@ -30,6 +31,7 @@ class TestMain {
 		failures += run("AOT bytes round-trip preserves runnable barrage", testCompiledBytesRoundTrip);
 		failures += run("IR unrolls safe constant repeats", testIrRepeatUnroll);
 		failures += run("IR preserves repeats when repeatCount is referenced", testIrRepeatNoUnrollWhenReferenced);
+		failures += run("IR specializes constant opcodes", testIrConstantOpcodeSpecialization);
 		failures += run("parser statement types are classified correctly", testStatementTypes);
 		failures += run("parser grammar coverage", testGrammarCoverage);
 		failures += run("parser rejects unsupported random direction clause", testUnsupportedRandomDirectionClause);
@@ -166,6 +168,30 @@ class TestMain {
 		final start = compiled.actions[compiled.startActionId];
 		assertIntEquals(2, start.instructions.length, "Expected no unroll when repeatCount is referenced.");
 		assertTrue(start.repeatCountOverride == null, "Expected no repeat override when unroll is blocked.");
+	}
+
+	static function testIrConstantOpcodeSpecialization():Void {
+		final source =
+			"barrage called op_specialize\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 10\n"
+			+ "\taction called start\n"
+			+ "\t\twait 2 seconds\n"
+			+ "\t\tset speed to 3\n"
+			+ "\t\tset direction to 7\n"
+			+ "\t\tset acceleration to 2\n"
+			+ "\t\tset speed to 4 over 10 frames\n"
+			+ "\t\tfire source from relative position [1,2] in absolute direction 30 with absolute acceleration 1\n";
+		final compiled = Barrage.compileString(source, false);
+		final start = compiled.actions[compiled.startActionId];
+		final ops = [for (instr in start.instructions) instr.opcode];
+		assertIntEquals(6, ops.length, "Expected six compiled instructions.");
+		assertTrue(ops[0] == Opcode.WAIT_SECONDS_CONST, "Wait should specialize to constant-seconds opcode.");
+		assertTrue(ops[1] == Opcode.PROPERTY_SET_SPEED_CONST, "Speed set should specialize to const opcode.");
+		assertTrue(ops[2] == Opcode.PROPERTY_SET_DIRECTION_CONST, "Direction set should specialize to const opcode.");
+		assertTrue(ops[3] == Opcode.PROPERTY_SET_ACCEL_CONST, "Acceleration set should specialize to const opcode.");
+		assertTrue(ops[4] == Opcode.PROPERTY_TWEEN_SPEED_CONST, "Tween speed should specialize to const opcode.");
+		assertTrue(ops[5] == Opcode.FIRE_CONST, "Fire should specialize to const opcode.");
 	}
 
 	static function testForwardActionReference():Void {
@@ -937,7 +963,6 @@ class TestMain {
 	static function simulate(running:RunningBarrage, emitter:MockEmitter, dt:Float, steps:Int):Void {
 		for (_ in 0...steps) {
 			running.update(dt);
-			emitter.update(dt);
 		}
 	}
 
@@ -1026,16 +1051,7 @@ private class MockEmitter implements IBulletEmitter {
 	}
 
 	public function update(delta:Float):Void {
-		for (bullet in emitted) {
-			if (!bullet.active)
-				continue;
-			bullet.speed += bullet.acceleration * delta;
-			final angleRad = bullet.angle * Math.PI / 180;
-			bullet.velocityX = Math.cos(angleRad) * bullet.speed;
-			bullet.velocityY = Math.sin(angleRad) * bullet.speed;
-			bullet.posX += bullet.velocityX * delta;
-			bullet.posY += bullet.velocityY * delta;
-		}
+		// Engine-owned SoA simulation updates bullet state.
 	}
 
 	public function activeCount():Int {
