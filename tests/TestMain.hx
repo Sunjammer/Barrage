@@ -3,10 +3,15 @@ package tests;
 import barrage.Barrage;
 import barrage.data.ActionDef;
 import barrage.data.EventDef.EventType;
+import barrage.data.events.ActionReferenceEventDef;
 import barrage.data.events.FireEventDef;
+import barrage.data.events.PropertySetDef;
+import barrage.data.events.PropertyTweenDef;
 import barrage.data.events.WaitDef;
+import barrage.data.properties.DurationType;
 import barrage.ir.CompiledBarrage;
 import barrage.parser.ParseError;
+import barrage.data.targets.TargetSelector;
 import barrage.instancing.IBarrageBullet;
 import barrage.instancing.IBulletEmitter;
 import barrage.instancing.RunningBarrage;
@@ -26,6 +31,8 @@ class TestMain {
 		failures += run("IR unrolls safe constant repeats", testIrRepeatUnroll);
 		failures += run("IR preserves repeats when repeatCount is referenced", testIrRepeatNoUnrollWhenReferenced);
 		failures += run("parser statement types are classified correctly", testStatementTypes);
+		failures += run("parser grammar coverage", testGrammarCoverage);
+		failures += run("parser rejects unsupported random direction clause", testUnsupportedRandomDirectionClause);
 		failures += run("parser supports forward action references", testForwardActionReference);
 		failures += run("parser rejects unknown action references", testUnknownActionReference);
 		failures += run("parser rejects unknown bullet references", testUnknownBulletReference);
@@ -44,6 +51,7 @@ class TestMain {
 		failures += run("dev example emits expected first incremental outcome", testDevExampleOutcome);
 		failures += run("particle governor: bullet moves expected distance over script lifetime", testBulletMotionOverScriptLifetime);
 		failures += run("particle governor: acceleration affects traveled distance", testBulletMotionWithAcceleration);
+		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
 		failures += run("VM execution parity with legacy runtime", testVmParity);
 		failures += run("VM parity across all shipped examples", testVmParityExamples);
 		failures += run("benchmark VM vs legacy runtime", benchmarkVmVsLegacy);
@@ -254,6 +262,110 @@ class TestMain {
 		assertEventType(EventType.DIE, events[4].type, "Event 4");
 	}
 
+	static function testGrammarCoverage():Void {
+		final source =
+			"barrage called grammar_full\n"
+			+ "\ttarget called p is player\n"
+			+ "\ttarget called pa is parent\n"
+			+ "\ttarget called me is self\n"
+			+ "\ttarget called near_seed is nearest bullet where type is seed\n"
+			+ "\tbullet called seed\n"
+			+ "\t\tspeed is 10\n"
+			+ "\t\tdirection is (45+45)\n"
+			+ "\t\tacceleration is (rand()*2)\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\twait 1 frames\n"
+			+ "\t\t\tdie\n"
+			+ "\tbullet called child\n"
+			+ "\t\tspeed is (50 + rand()*5)\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\tset direction to aimed at near_seed over 2 frames\n"
+			+ "\t\t\tincrement speed by 5 over 1 seconds\n"
+			+ "\t\t\tset acceleration to -1\n"
+			+ "\t\t\twait (1+1) frames\n"
+			+ "\t\t\tvanish\n"
+			+ "\taction called helper\n"
+			+ "\t\tmyoverride is 3\n"
+			+ "\t\tfire child from relative position [1,2] at absolute speed (20+myoverride) in aimed at p direction (360/8*0.5) with incremental acceleration 1\n"
+			+ "\t\tset direction to aimed at p\n"
+			+ "\t\tincrement direction by aimed at pa over 3 frames\n"
+			+ "\t\twait 1 seconds\n"
+			+ "\t\trepeat 2 times\n"
+			+ "\taction called start\n"
+			+ "\t\tdo helper\n"
+			+ "\t\t\tmyoverride is 7\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\tfire seed in aimed at me direction 0\n"
+			+ "\t\t\twait 1 frames\n"
+			+ "\t\tfire seed in incremental direction 10\n"
+			+ "\t\trepeat forever\n";
+
+		final barrage = Barrage.fromString(source, false);
+		assertTrue(barrage.start != null, "Expected start action.");
+
+		assertTargetSelector(TargetSelector.PLAYER, barrage.targets.get("p"), "target p");
+		assertTargetSelector(TargetSelector.PARENT, barrage.targets.get("pa"), "target pa");
+		assertTargetSelector(TargetSelector.SELF, barrage.targets.get("me"), "target me");
+		assertTargetSelector(TargetSelector.NEAREST_BULLET_TYPE("seed"), barrage.targets.get("near_seed"), "target near_seed");
+
+		final helperId = findActionId(barrage, "helper");
+		final helper = barrage.actions[helperId];
+		assertIntEquals(4, helper.events.length, "Helper should contain fire, set, tween, wait events.");
+		assertEventType(EventType.FIRE, helper.events[0].type, "helper event 0");
+		assertEventType(EventType.PROPERTY_SET, helper.events[1].type, "helper event 1");
+		assertEventType(EventType.PROPERTY_TWEEN, helper.events[2].type, "helper event 2");
+		assertEventType(EventType.WAIT, helper.events[3].type, "helper event 3");
+		assertIntEquals(2, Std.int(helper.repeatCount.constValue), "Helper repeat count should parse to 2.");
+
+		final helperFire:FireEventDef = cast helper.events[0];
+		assertTrue(helperFire.position.modifier.has(PropertyModifier.RELATIVE), "Helper fire position should be relative.");
+		assertFloatEquals(1, helperFire.position.constValueVec[0], 1e-6, "Helper fire X position.");
+		assertFloatEquals(2, helperFire.position.constValueVec[1], 1e-6, "Helper fire Y position.");
+		assertTrue(helperFire.speed.scripted, "Helper fire speed should be scripted.");
+		assertTrue(helperFire.direction.modifier.has(PropertyModifier.AIMED), "Helper fire direction should be aimed.");
+		assertTargetSelector(TargetSelector.TARGET_ALIAS("p"), helperFire.direction.target, "helper fire direction target");
+		assertFloatEquals(22.5, helperFire.direction.constValue, 1e-6, "Helper fire direction offset value.");
+		assertTrue(helperFire.acceleration.modifier.has(PropertyModifier.INCREMENTAL), "Helper fire acceleration should be incremental.");
+		assertFloatEquals(1, helperFire.acceleration.constValue, 1e-6, "Helper fire acceleration value.");
+
+		final helperSet:PropertySetDef = cast helper.events[1];
+		assertTrue(helperSet.direction.modifier.has(PropertyModifier.AIMED), "Helper set direction should be aimed.");
+		assertTargetSelector(TargetSelector.TARGET_ALIAS("p"), helperSet.direction.target, "helper set direction target");
+
+		final helperTween:PropertyTweenDef = cast helper.events[2];
+		assertTrue(helperTween.relative, "Helper increment direction should be relative.");
+		assertTrue(helperTween.direction.modifier.has(PropertyModifier.AIMED), "Helper tween direction should be aimed.");
+		assertTargetSelector(TargetSelector.TARGET_ALIAS("pa"), helperTween.direction.target, "helper tween direction target");
+		assertFloatEquals(3, helperTween.tweenTime, 1e-6, "Helper tween duration value.");
+		assertTrue(helperTween.durationType == DurationType.FRAMES, "Helper tween duration type should be frames.");
+
+		final helperWait:WaitDef = cast helper.events[3];
+		assertFloatEquals(1, helperWait.waitTime, 1e-6, "Helper wait value.");
+		assertTrue(helperWait.durationType == DurationType.SECONDS, "Helper wait duration type should be seconds.");
+
+		final start = barrage.start;
+		assertTrue(start.endless, "Start action should repeat forever.");
+		assertIntEquals(3, start.events.length, "Start should have action_ref, action, fire.");
+		assertEventType(EventType.ACTION_REF, start.events[0].type, "start event 0");
+		assertEventType(EventType.ACTION, start.events[1].type, "start event 1");
+		assertEventType(EventType.FIRE, start.events[2].type, "start event 2");
+
+		final startActionRef:ActionReferenceEventDef = cast start.events[0];
+		assertIntEquals(1, startActionRef.overrides.length, "Action ref should have one override.");
+		assertStringEquals("myoverride", startActionRef.overrides[0].name, "Override property name.");
+		assertFloatEquals(7, startActionRef.overrides[0].constValue, 1e-6, "Override property value.");
+	}
+
+	static function testUnsupportedRandomDirectionClause():Void {
+		final source =
+			"barrage called bad_random_clause\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 10\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in random direction 0\n";
+		assertParseError(source, "Unrecognized line");
+	}
+
 	static function testNullOnCompleteCallback():Void {
 		final source = "barrage called complete_test\n\taction called start\n\t\twait 1 frames\n";
 		final barrage = Barrage.fromString(source, false);
@@ -409,6 +521,40 @@ class TestMain {
 		final bullet = emitter.emitted[0];
 		// Semi-implicit Euler in MockEmitter.update should land close to 20 units.
 		assertFloatEquals(20, bullet.posX, 0.5, "Bullet should travel ~20 units in 2 seconds under +10 accel.");
+	}
+
+	static function testRuntimeProfilingMetrics():Void {
+		final source =
+			"barrage called profile_metrics\n"
+			+ "\ttarget called near_worker is nearest bullet where type is worker\n"
+			+ "\tbullet called worker\n"
+			+ "\t\tspeed is (difficulty > 0 ? 100 : 50)\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\tset direction to aimed at near_worker over 1 frames\n"
+			+ "\t\t\twait 1 frames\n"
+			+ "\t\t\trepeat 4 times\n"
+			+ "\taction called start\n"
+			+ "\t\tfire worker in absolute direction (rand()*360)\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\twait 1 frames\n"
+			+ "\t\t\tfire worker in absolute direction (rand()*360)\n"
+			+ "\t\t\trepeat 6 times\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final running = barrage.run(emitter);
+		running.profilingEnabled = true;
+		running.start();
+		simulate(running, emitter, 1 / 60, 90);
+
+		assertTrue(running.profile.updateTicks > 0, "Expected profiled update tick count > 0.");
+		assertTrue(running.profile.actionSeconds >= 0, "Expected actionSeconds metric to be valid.");
+		assertTrue(running.profile.cleanupSeconds >= 0, "Expected cleanupSeconds metric to be valid.");
+		assertTrue(running.profile.scriptEvalSeconds >= 0, "Expected scriptEvalSeconds metric to be valid.");
+		assertTrue(running.profile.nativeScriptEvals > 0, "Expected native script eval count > 0.");
+		assertTrue(running.profile.fallbackScriptEvals > 0, "Expected fallback script eval count > 0.");
+		assertTrue(running.profile.targetQueries > 0, "Expected target queries count > 0.");
+		assertTrue(running.profile.bulletsSpawned > 0, "Expected spawned bullet count > 0.");
+		assertTrue(running.profile.peakActiveBullets > 0, "Expected peak active bullets > 0.");
 	}
 
 	static function testVmParity():Void {
@@ -617,6 +763,23 @@ class TestMain {
 		if (expected != actual) {
 			throw message + " Expected: " + expected + ", actual: " + actual;
 		}
+	}
+
+	static function assertTargetSelector(expected:TargetSelector, actual:TargetSelector, message:String):Void {
+		final expectedText = Std.string(expected);
+		final actualText = Std.string(actual);
+		if (expectedText != actualText) {
+			throw message + " Expected: " + expectedText + ", actual: " + actualText;
+		}
+	}
+
+	static function findActionId(barrage:Barrage, name:String):Int {
+		for (action in barrage.actions) {
+			if (action != null && action.name == name) {
+				return action.id;
+			}
+		}
+		throw "Could not find action by name: " + name;
 	}
 
 	static function assertStartEventTypes(path:String, expected:Array<EventType>):Void {
