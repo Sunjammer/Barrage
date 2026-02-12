@@ -66,7 +66,7 @@ class RunningBarrage {
 	var slotActionTimeCamel:Int;
 	var slotRepeatCountLower:Int;
 	var slotRepeatCountCamel:Int;
-	var actionsByHandle:Array<RunningAction>;
+	var actionsByHandle:Array<Null<RunningAction>>;
 	var actionIndexByHandle:Array<Int>;
 
 	public var emitter:IBulletEmitter;
@@ -133,6 +133,9 @@ class RunningBarrage {
 				stopAction(a);
 			} else {
 				final removed = activeActions.shift();
+				if (removed == null) {
+					break;
+				}
 				actionIndexByHandle[removed] = -1;
 				for (i in 0...activeActions.length) {
 					actionIndexByHandle[activeActions[i]] = i;
@@ -204,6 +207,9 @@ class RunningBarrage {
 			if (!bulletStore.isActive(handle) || !bulletStore.getSource(handle).active) {
 				bulletStore.release(handle);
 				final last = bullets.pop();
+				if (last == null) {
+					continue;
+				}
 				if (i < bullets.length) {
 					bullets[i] = last;
 				}
@@ -248,12 +254,12 @@ class RunningBarrage {
 		}
 	}
 
-	public inline function runActionByID(triggerAction:RunningAction, id:Int, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
+	public inline function runActionByID(triggerAction:Null<RunningAction>, id:Int, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
 			delta:Float = 0):RunningAction {
 		return runAction(triggerAction, new RunningAction(this, owner.actions[id]), triggerBullet, overrides, delta);
 	}
 
-	public inline function runAction(triggerAction:RunningAction, action:RunningAction, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
+	public inline function runAction(triggerAction:Null<RunningAction>, action:RunningAction, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
 			delta:Float = 0):RunningAction {
 		final handle = action.stateHandle;
 		actionsByHandle[handle] = action;
@@ -542,9 +548,9 @@ class RunningBarrage {
 		final handle = action.stateHandle;
 		actionsByHandle[handle] = null;
 		final idx = actionIndexByHandle[handle];
-		if (idx != null && idx >= 0 && idx < activeActions.length) {
+		if (idx >= 0 && idx < activeActions.length) {
 			final last = activeActions.pop();
-			if (idx < activeActions.length) {
+			if (last != null && idx < activeActions.length) {
 				activeActions[idx] = last;
 				actionIndexByHandle[last] = idx;
 			}
@@ -573,6 +579,9 @@ class RunningBarrage {
 				stopAction(a);
 			} else {
 				final removed = activeActions.shift();
+				if (removed == null) {
+					break;
+				}
 				actionIndexByHandle[removed] = -1;
 				for (i in 0...activeActions.length) {
 					actionIndexByHandle[activeActions[i]] = i;

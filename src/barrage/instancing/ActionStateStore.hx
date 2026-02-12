@@ -25,7 +25,7 @@ class ActionStateStore {
 	public var runEvents:Array<Int>;
 	public var repeatCount:Array<Int>;
 	public var endless:Array<Bool>;
-	public var callingAction:Array<RunningAction>;
+	public var callingAction:Array<Null<RunningAction>>;
 	public var active:Array<Bool>;
 
 	final freeList:Array<Int>;
@@ -52,7 +52,7 @@ class ActionStateStore {
 	}
 
 	public function alloc():ActionHandle {
-		final idx:Int = if (freeList.length > 0) freeList.pop() else active.length;
+		final idx:Int = if (freeList.length > 0) cast freeList.pop() else active.length;
 		if (idx == active.length) {
 			sleepTime.push(0.0);
 			currentBullet.push(null);

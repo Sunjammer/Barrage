@@ -34,7 +34,7 @@ class RunningAction {
 	var eventsPerCycle:Int;
 	var runEvents(get, set):Int;
 
-	public var callingAction(get, set):RunningAction;
+	public var callingAction(get, set):Null<RunningAction>;
 	public var properties:Array<Property>;
 
 	public function new(runningBarrage:RunningBarrage, def:ActionDef) {
@@ -122,7 +122,7 @@ class RunningAction {
 		return null;
 	}
 
-	public inline function enter(callingAction:RunningAction, barrage:RunningBarrage, ?overrides:Array<Property>) {
+	public inline function enter(callingAction:Null<RunningAction>, barrage:RunningBarrage, ?overrides:Array<Property>) {
 		enterSerial++;
 		actionTime = 0;
 		if (overrides != null) {
@@ -257,11 +257,11 @@ class RunningAction {
 		return stateStore.runEvents[stateHandle] = value;
 	}
 
-	inline function get_callingAction():RunningAction {
+	inline function get_callingAction():Null<RunningAction> {
 		return stateStore.callingAction[stateHandle];
 	}
 
-	inline function set_callingAction(value:RunningAction):RunningAction {
+	inline function set_callingAction(value:Null<RunningAction>):Null<RunningAction> {
 		return stateStore.callingAction[stateHandle] = value;
 	}
 }
