@@ -40,7 +40,7 @@ class RunningAction {
 
 	var barrage:RunningBarrage;
 	final stateStore:ActionStateStore;
-	final stateHandle:ActionHandle;
+	public final stateHandle:ActionHandle;
 	var useVmExecution:Bool;
 	var compiledAction:Null<CompiledAction>;
 	var vmUnrolled:Bool;

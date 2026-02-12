@@ -22,7 +22,7 @@ class RunningBarrage {
 	public var owner:Barrage;
 	public var initAction:RunningAction;
 	// public var allActions:Vector<RunningAction>;
-	public var activeActions:Array<RunningAction>;
+	public var activeActions:Array<ActionHandle>;
 	public var time:Float = 0;
 	public var onComplete:RunningBarrage->Void;
 	public var lastBulletFired:IBarrageBullet;
@@ -58,6 +58,8 @@ class RunningBarrage {
 	var slotActionTimeCamel:Int;
 	var slotRepeatCountLower:Int;
 	var slotRepeatCountCamel:Int;
+	var actionsByHandle:Array<RunningAction>;
+	var actionIndexByHandle:Array<Int>;
 
 	public var emitter:IBulletEmitter;
 
@@ -78,6 +80,8 @@ class RunningBarrage {
 		#end
 		this.compiledProgram = useVmExecution ? owner.compile() : null;
 		activeActions = [];
+		actionsByHandle = [];
+		actionIndexByHandle = [];
 		bullets = [];
 		actionStore = new ActionStateStore();
 		bulletStore = new SoaBulletStore();
@@ -116,7 +120,17 @@ class RunningBarrage {
 
 	public function stop():Void {
 		while (activeActions.length > 0) {
-			stopAction(activeActions[0]);
+			final h = activeActions[0];
+			final a = actionsByHandle[h];
+			if (a != null) {
+				stopAction(a);
+			} else {
+				final removed = activeActions.shift();
+				actionIndexByHandle[removed] = -1;
+				for (i in 0...activeActions.length) {
+					actionIndexByHandle[activeActions[i]] = i;
+				}
+			}
 		}
 		started = false;
 	}
@@ -156,7 +170,11 @@ class RunningBarrage {
 			#end
 			var i = activeActions.length;
 			while (i-- > 0) {
-				activeActions[i].update(this, delta);
+				final handle = activeActions[i];
+				final action = actionsByHandle[handle];
+				if (action != null) {
+					action.update(this, delta);
+				}
 			}
 			#if barrage_profile
 				profile.actionSeconds += Timer.stamp() - tActions;
@@ -230,7 +248,10 @@ class RunningBarrage {
 
 	public inline function runAction(triggerAction:RunningAction, action:RunningAction, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
 			delta:Float = 0):RunningAction {
-		activeActions.push(action);
+		final handle = action.stateHandle;
+		actionsByHandle[handle] = action;
+		actionIndexByHandle[handle] = activeActions.length;
+		activeActions.push(handle);
 		if (triggerAction != null) {
 			action.prevAccel = triggerAction.prevAccel;
 			action.prevSpeed = triggerAction.prevSpeed;
@@ -248,7 +269,17 @@ class RunningBarrage {
 
 	public inline function stopAction(action:RunningAction) {
 		action.exit(this);
-		activeActions.remove(action);
+		final handle = action.stateHandle;
+		actionsByHandle[handle] = null;
+		final idx = actionIndexByHandle[handle];
+		if (idx != null && idx >= 0 && idx < activeActions.length) {
+			final last = activeActions.pop();
+			if (idx < activeActions.length) {
+				activeActions[idx] = last;
+				actionIndexByHandle[last] = idx;
+			}
+		}
+		actionIndexByHandle[handle] = -1;
 		// trace("Stop action: "+action.def.name);
 	}
 
@@ -266,9 +297,21 @@ class RunningBarrage {
 
 	public function dispose() {
 		while (activeActions.length > 0) {
-			stopAction(activeActions[0]);
+			final h = activeActions[0];
+			final a = actionsByHandle[h];
+			if (a != null) {
+				stopAction(a);
+			} else {
+				final removed = activeActions.shift();
+				actionIndexByHandle[removed] = -1;
+				for (i in 0...activeActions.length) {
+					actionIndexByHandle[activeActions[i]] = i;
+				}
+			}
 		}
 		emitter = null;
+		actionsByHandle = [];
+		actionIndexByHandle = [];
 		bulletsByDef = [];
 		spatialByType = [];
 		spatialTickByType = [];
