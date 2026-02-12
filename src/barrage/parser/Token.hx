@@ -11,6 +11,13 @@ enum Token {
 	TAction;
 	TFire;
 	TDo;
+	TTarget;
+	TPlayer;
+	TParent;
+	TSelf;
+	TNearest;
+	TWhere;
+	TType;
 	TAt;
 	TIn;
 	TWith;

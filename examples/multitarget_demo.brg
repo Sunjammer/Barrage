@@ -1,0 +1,51 @@
+# Demonstrates dynamic multi-target behavior:
+# - some bullets home on the player
+# - some home on their parent bullet
+# - some retarget nearest active "seed" bullet each cycle
+
+barrage called multitarget_demo
+	target called hero is player
+	target called parent_source is parent
+	target called nearest_seed is nearest bullet where type is seed
+
+	bullet called seeker_player
+		speed is 180
+		do action
+			set direction to aimed at hero over 0.15 seconds
+			wait 0.15 seconds
+			repeat forever
+
+	bullet called seeker_parent
+		speed is 140
+		do action
+			set direction to aimed at parent_source over 0.1 seconds
+			wait 0.1 seconds
+			repeat forever
+
+	bullet called seed
+		speed is 90
+		do action
+			wait 0.4 seconds
+			fire seeker_player in aimed at hero direction 0
+			fire seeker_parent in aimed at parent_source direction 0
+			wait 0.4 seconds
+			repeat 6 times
+
+	bullet called hunter
+		speed is 160
+		do action
+			set direction to aimed at nearest_seed over 0.1 seconds
+			wait 0.1 seconds
+			repeat forever
+
+	action called start
+		fire seed in aimed at hero direction 0
+		do action
+			fire seed in incremental direction (360/8)
+			repeat 7 times
+
+		wait 0.5 seconds
+		fire hunter in aimed at nearest_seed direction 0
+		do action
+			fire hunter in incremental direction (360/5)
+			repeat 4 times

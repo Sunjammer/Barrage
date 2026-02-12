@@ -13,20 +13,18 @@ import barrage.data.events.PropertyTweenDef;
 import barrage.data.events.WaitDef;
 import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
+import barrage.data.targets.TargetSelector;
 import barrage.parser.Parser.Block;
 import barrage.parser.Token;
 import haxe.ds.Vector.Vector;
 import hscript.Expr;
-import hscript.Interp;
-
-using Lambda;
 
 @:allow(barrage.parser.Line)
 @:allow(barrage.parser.Block)
 class Parser {
-	static var number:EReg = ~/[0-9]+[.,-]*[0-9]*/;
-	static var math:EReg = ~/\([.\d *\-\+\/]*\)/;
-	static var script:EReg = ~/\(.*\)/;
+	static var number:EReg = ~/^-?(?:\d+\.?\d*|\.\d+)$/;
+	static var math:EReg = ~/^\([.\d *\-\+\/]+\)$/;
+	static var script:EReg = ~/^\(.*\)$/;
 	static var vector:EReg = ~/\[(-*\d+(\.(\d+))*,*){2}\]/;
 	static var stack:Array<BarrageItemDef>;
 	static var bulletIdMap:Map<String, Int>;
@@ -38,6 +36,7 @@ class Parser {
 	static var uidPool:Int;
 	static var timeOffset:Float;
 	static var output:Barrage;
+	static var pendingActionRefs:Array<PendingActionRef>;
 
 	public static function parse(data:String):Barrage {
 		log("Starting parse");
@@ -63,6 +62,14 @@ class Parser {
 		actionIDs = 0;
 		bulletIDs = 0;
 		uidPool = 0;
+		pendingActionRefs = [];
+		output.targets.set("player", PLAYER);
+
+		for (b in root.children) {
+			if (b.tokens.length >= 3 && b.tokens[0] == TTarget && b.tokens[1] == TIdentifier) {
+				buildTargetDef(b);
+			}
+		}
 
 		// find every first level definition
 		for (b in root.children) {
@@ -83,11 +90,13 @@ class Parser {
 			var bd = bulletDefMap.get(k);
 			output.bullets[bulletIdMap.get(bd.name)] = bd;
 		}
+		resolveActionReferences();
 
 		bulletIdMap = null;
 		actionIdMap = null;
 		bulletDefMap = null;
 		actionDefMap = null;
+		pendingActionRefs = null;
 		if (output.start == null)
 			throw new ParseError(0, "No action called start");
 		var out = output;
@@ -200,7 +209,11 @@ class Parser {
 	static private function buildActionRef(b:Block) {
 		var ad:ActionDef = cast currentElement();
 		var evt:ActionReferenceEventDef = new ActionReferenceEventDef();
-		evt.actionID = actionIdMap.get(b.values[1]);
+		pendingActionRefs.push({
+			event: evt,
+			name: b.values[1],
+			lineNo: b.lineNo
+		});
 		for (c in b.children) {
 			switch (c.tokens) {
 				case [TIdentifier, TNumber | TConst_math | TScript]:
@@ -209,6 +222,20 @@ class Parser {
 			}
 		}
 		ad.events.push(evt);
+	}
+
+	static function resolveActionReferences():Void {
+		for (pending in pendingActionRefs) {
+			if (!actionIdMap.exists(pending.name))
+				throw new ParseError(pending.lineNo, 'Unknown action reference "' + pending.name + '"');
+			pending.event.actionID = actionIdMap.get(pending.name);
+		}
+	}
+
+	static function buildTargetDef(b:Block):Void {
+		final targetName:String = b.values[1];
+		final selector = parseTargetExpression(b.tokens, b.values, 2, b.tokens.length, b.lineNo);
+		output.targets.set(targetName, selector);
 	}
 
 	static inline function createProperty(b:Block):Property {
@@ -225,7 +252,7 @@ class Parser {
 	}
 
 	static inline function clean(data:String):String {
-		return data.toLowerCase().split("\r").join("\n").split("\n\n").join("\n");
+		return data.split("\r\n").join("\n").split("\r").join("\n");
 	}
 
 	static inline function getLines(data:String):Array<Line> {
@@ -233,13 +260,44 @@ class Parser {
 	}
 
 	static inline function trimComments(lines:Array<String>):Array<String> {
-		var i = lines.length;
-		while (i-- > 0) {
-			if (lines[i] == "" || lines[i].indexOf("#") >= 0) {
-				lines.splice(i, 1);
+		var out = new Array<String>();
+		for (line in lines) {
+			var stripped = stripComment(line);
+			if (StringTools.trim(stripped).length > 0) {
+				out.push(stripped);
 			}
 		}
-		return lines;
+		return out;
+	}
+
+	static function stripComment(line:String):String {
+		var parenLevel = 0;
+		var bracketLevel = 0;
+		for (i in 0...line.length) {
+			var ch = line.charAt(i);
+			switch (ch) {
+				case "(":
+					parenLevel++;
+				case ")":
+					if (parenLevel > 0)
+						parenLevel--;
+				case "[":
+					bracketLevel++;
+				case "]":
+					if (bracketLevel > 0)
+						bracketLevel--;
+				case "#":
+					if (parenLevel == 0 && bracketLevel == 0) {
+						if (i == 0)
+							return "";
+						var prev = line.charAt(i - 1);
+						if (prev == " " || prev == "\t")
+							return StringTools.rtrim(line.substr(0, i));
+					}
+				default:
+			}
+		}
+		return line;
 	}
 
 	static inline function toLines(stringLines:Array<String>):Array<Line> {
@@ -331,19 +389,20 @@ class Parser {
 	}
 
 	static function getTokenType(data:String):Token {
+		var lower = data.toLowerCase();
 		if (vector.match(data)) {
 			return TVector;
-		}
-		if (script.match(data)) {
-			return TScript;
 		}
 		if (math.match(data)) {
 			return TConst_math;
 		}
+		if (script.match(data)) {
+			return TScript;
+		}
 		if (number.match(data)) {
 			return TNumber;
 		}
-		switch (data) {
+		switch (lower) {
 			case "called", "then", "is", "to", "times", "by":
 				return TIgnored;
 			case "horizontal":
@@ -362,6 +421,20 @@ class Parser {
 				return TPosition;
 			case "do":
 				return TDo;
+			case "target":
+				return TTarget;
+			case "player":
+				return TPlayer;
+			case "parent":
+				return TParent;
+			case "self":
+				return TSelf;
+			case "nearest":
+				return TNearest;
+			case "where":
+				return TWhere;
+			case "type":
+				return TType;
 			case "acceleration":
 				return TAcceleration;
 			case "script":
@@ -471,6 +544,11 @@ class Parser {
 			runFireParse(b);
 			return;
 		}
+		if ((b.tokens[0] == TSet || b.tokens[0] == TIncrement) && b.tokens.length >= 5 && b.tokens[1] == TDirection && b.tokens[2] == TAimed
+			&& b.tokens[3] == TAt) {
+			runPropertySetAimedTarget(b, b.tokens[0] == TIncrement);
+			return;
+		}
 		switch (b.tokens) {
 			case [
 				TIdentifier | TSpeed | TDirection | TAcceleration,
@@ -508,6 +586,7 @@ class Parser {
 		var accelerationType:Token = null;
 		var directionType:Token = null;
 		var positionType:Token = null;
+		var directionTarget:TargetSelector = PLAYER;
 
 		var speed:Dynamic = null;
 		var acceleration:Dynamic = null;
@@ -517,6 +596,20 @@ class Parser {
 		var index = 2;
 
 		while (index < b.tokens.length) {
+			if (index + 4 <= b.tokens.length && b.tokens[index] == TIn && b.tokens[index + 1] == TAimed && b.tokens[index + 2] == TAt) {
+				var directionIdx = index + 3;
+				while (directionIdx < b.tokens.length && b.tokens[directionIdx] != TDirection) {
+					directionIdx++;
+				}
+				if (directionIdx >= b.tokens.length - 1) {
+					throw new ParseError(b.lineNo, "Invalid aimed target direction clause");
+				}
+				directionType = TAimed;
+				directionTarget = parseTargetExpression(b.tokens, b.values, index + 3, directionIdx, b.lineNo);
+				direction = b.values[directionIdx + 1];
+				index = directionIdx + 2;
+				continue;
+			}
 			switch (b.tokens.slice(index, index + 4)) {
 				case [
 					TAt,
@@ -556,17 +649,19 @@ class Parser {
 			index += 4;
 		}
 
-		runFire(b, speedType, speed, directionType, direction, positionType, position, accelerationType, acceleration);
+		runFire(b, speedType, speed, directionType, direction, directionTarget, positionType, position, accelerationType, acceleration);
 	}
 
-	static function runFire(b:Block, ?speedType:Token, ?speed:Dynamic, ?directionType:Token, ?direction:Dynamic, ?positionType:Token, ?position:Dynamic,
-			?accelerationType:Token, ?acceleration:Dynamic) {
+	static function runFire(b:Block, ?speedType:Token, ?speed:Dynamic, ?directionType:Token, ?direction:Dynamic, ?directionTarget:TargetSelector,
+			?positionType:Token, ?position:Dynamic, ?accelerationType:Token, ?acceleration:Dynamic) {
 		// trace("Run fire: " + direction);
 		var anon:Bool = b.tokens[1] == TBullet;
 
 		var event = new FireEventDef();
 
 		if (!anon) {
+			if (!bulletIdMap.exists(b.values[1]))
+				throw new ParseError(b.lineNo, 'Unknown bullet reference "' + b.values[1] + '"');
 			event.bulletID = bulletIdMap.get(b.values[1]);
 		}
 
@@ -637,6 +732,7 @@ class Parser {
 					event.direction.modifier.set(INCREMENTAL);
 				default:
 					event.direction.modifier.set(AIMED);
+					event.direction.target = directionTarget == null ? PLAYER : directionTarget;
 			}
 			if (Std.isOfType(direction, Expr)) {
 				event.direction.script = direction;
@@ -646,6 +742,7 @@ class Parser {
 			}
 		} else {
 			event.direction.modifier.set(AIMED);
+			event.direction.target = PLAYER;
 		}
 
 		var ad:ActionDef = cast currentElement();
@@ -695,8 +792,6 @@ class Parser {
 	}
 
 	static inline function runPropertySet(b:Block, overTime:Bool = false, relative:Bool = false) {
-		var target:String = "";
-		var value:Null<Dynamic>;
 		var event:Dynamic = null;
 		if (overTime)
 			event = new PropertyTweenDef();
@@ -748,9 +843,80 @@ class Parser {
 		ad.events.push(event);
 	}
 
+	static function runPropertySetAimedTarget(b:Block, relative:Bool = false):Void {
+		var overIndex = -1;
+		for (i in 0...b.tokens.length) {
+			if (b.tokens[i] == TOver) {
+				overIndex = i;
+				break;
+			}
+		}
+		final overTime = overIndex != -1;
+		var event:Dynamic = overTime ? cast new PropertyTweenDef() : cast new PropertySetDef();
+		event.relative = relative;
+
+		event.direction = new Property("Direction");
+		var p:Property = event.direction;
+		p.modifier.set(AIMED);
+		final targetEnd = overTime ? overIndex : b.tokens.length;
+		p.target = parseTargetExpression(b.tokens, b.values, 4, targetEnd, b.lineNo);
+
+		if (overTime) {
+			switch (b.tokens[overIndex + 1]) {
+				case TNumber | TConst_math:
+					event.tweenTime = b.values[overIndex + 1];
+				case TScript:
+					event.tweenTimeScript = b.values[overIndex + 1];
+					event.scripted = true;
+				default:
+					throw new ParseError(b.lineNo, "Invalid tween time in aimed target set");
+			}
+			switch (b.tokens[overIndex + 2]) {
+				case TSeconds:
+					event.durationType = DurationType.SECONDS;
+				case TFrames:
+					event.durationType = DurationType.FRAMES;
+				default:
+					throw new ParseError(b.lineNo, "Invalid duration unit in aimed target set");
+			}
+		}
+
+		var ad:ActionDef = cast currentElement();
+		ad.events.push(event);
+	}
+
+	static function parseTargetExpression(tokens:Array<Token>, values:Array<Dynamic>, start:Int, endExclusive:Int, lineNo:Int):TargetSelector {
+		final len = endExclusive - start;
+		if (len <= 0) {
+			throw new ParseError(lineNo, "Missing target expression");
+		}
+		if (len == 1) {
+			return switch (tokens[start]) {
+				case TPlayer:
+					PLAYER;
+				case TParent:
+					PARENT;
+				case TSelf:
+					SELF;
+				case TIdentifier:
+					final alias = values[start];
+					if (!output.targets.exists(alias))
+						throw new ParseError(lineNo, 'Unknown target alias "' + alias + '"');
+					TARGET_ALIAS(alias);
+				default:
+					throw new ParseError(lineNo, "Invalid target expression");
+			}
+		}
+
+		if (len == 5 && tokens[start] == TNearest && tokens[start + 1] == TBullet && tokens[start + 2] == TWhere && tokens[start + 3] == TType
+			&& tokens[start + 4] == TIdentifier) {
+			return NEAREST_BULLET_TYPE(values[start + 4]);
+		}
+
+		throw new ParseError(lineNo, "Unsupported target expression");
+	}
+
 	static function runPropertyInit(b:Block) {
-		var target:String = "";
-		var value:Null<Dynamic>;
 		var p:Property = null;
 		var object:Dynamic = currentElement();
 		if (b.tokens[0] != TIdentifier) {
@@ -811,4 +977,10 @@ class Block {
 		out += "}";
 		return out;
 	}
+}
+
+private typedef PendingActionRef = {
+	var event:ActionReferenceEventDef;
+	var name:String;
+	var lineNo:Int;
 }

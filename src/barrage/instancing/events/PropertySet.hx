@@ -26,7 +26,7 @@ class PropertySet implements ITriggerableEvent {
 			var ang:Float = 0;
 			if (def.direction.modifier.has(AIMED)) {
 				var tb = runningAction.triggeringBullet;
-				ang = runningBarrage.emitter.getAngleToPlayer(tb.posX, tb.posY);
+				ang = runningBarrage.getAngleToTarget(tb.posX, tb.posY, runningAction, def.direction.target);
 			} else {
 				ang = def.direction.get(runningBarrage, runningAction);
 			}

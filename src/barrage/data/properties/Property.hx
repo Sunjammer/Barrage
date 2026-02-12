@@ -2,6 +2,7 @@ package barrage.data.properties;
 
 import barrage.instancing.RunningAction;
 import barrage.instancing.RunningBarrage;
+import barrage.data.targets.TargetSelector;
 import haxe.ds.Vector;
 import haxe.EnumFlags;
 
@@ -21,6 +22,7 @@ class Property {
 	public var script:Null<hscript.Expr>;
 	public var scripted:Bool = false;
 	public var name:String;
+	public var target:TargetSelector = PLAYER;
 
 	public function new(name:String = "Property") {
 		this.name = name;
@@ -37,6 +39,7 @@ class Property {
 		this.script = other.script;
 		this.scripted = other.scripted;
 		this.name = other.name;
+		this.target = other.target;
 		this.modifier = other.modifier;
 	}
 
