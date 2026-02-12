@@ -57,20 +57,13 @@ class Barrage {
 		// trace("Creating barrage runner");
 		final activeRng = rng == null ? new SeededRng(0) : rng;
 		// run() always defaults to VM execution.
-		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true, false);
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false);
 	}
-
-	#if barrage_legacy
-	public inline function runLegacy(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng):RunningBarrage {
-		final activeRng = rng == null ? new SeededRng(0) : rng;
-		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false, false);
-	}
-	#end
 
 	public inline function runVm(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng,
 			strictNativeExpressions:Bool = true):RunningBarrage {
 		final activeRng = rng == null ? new SeededRng(0) : rng;
-		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true, strictNativeExpressions);
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, strictNativeExpressions);
 	}
 
 	public static function clearCache():Void {

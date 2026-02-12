@@ -34,7 +34,6 @@ class RunningBarrage {
 	public var profile:RuntimeProfile;
 	#end
 	public var scriptContext:ScriptContext;
-	public var useVmExecution:Bool;
 	public var strictNativeExpressions:Bool;
 	public var compiledProgram:Null<CompiledBarrage>;
 	public var tickCount:Int = 0;
@@ -63,12 +62,11 @@ class RunningBarrage {
 
 	public var emitter:IBulletEmitter;
 
-	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng, useVmExecution:Bool = false,
+	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng,
 			strictNativeExpressions:Bool = false) {
 		this.speedScale = speedScale;
 		this.accelScale = accelScale;
 		this.rng = rng;
-		this.useVmExecution = useVmExecution;
 		this.strictNativeExpressions = strictNativeExpressions;
 		this.emitter = emitter;
 		this.owner = owner;
@@ -78,7 +76,7 @@ class RunningBarrage {
 		#else
 		this.scriptContext = new ScriptContext(rng, strictNativeExpressions);
 		#end
-		this.compiledProgram = useVmExecution ? owner.compile() : null;
+		this.compiledProgram = owner.compile();
 		activeActions = [];
 		actionsByHandle = [];
 		actionIndexByHandle = [];
@@ -114,7 +112,7 @@ class RunningBarrage {
 		#end
 		scriptContext.setVarBySlot(slotBarrageTimeLower, time);
 		scriptContext.setVarBySlot(slotBarrageTimeCamel, time);
-		runAction(null, new RunningAction(this, owner.start, useVmExecution));
+		runAction(null, new RunningAction(this, owner.start));
 		started = true;
 	}
 
@@ -173,7 +171,7 @@ class RunningBarrage {
 				final handle = activeActions[i];
 				final action = actionsByHandle[handle];
 				if (action != null) {
-					action.update(this, delta);
+					executeActionHandle(handle, action, delta);
 				}
 			}
 			#if barrage_profile
@@ -243,7 +241,7 @@ class RunningBarrage {
 
 	public inline function runActionByID(triggerAction:RunningAction, id:Int, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
 			delta:Float = 0):RunningAction {
-		return runAction(triggerAction, new RunningAction(this, owner.actions[id], useVmExecution), triggerBullet, overrides, delta);
+		return runAction(triggerAction, new RunningAction(this, owner.actions[id]), triggerBullet, overrides, delta);
 	}
 
 	public inline function runAction(triggerAction:RunningAction, action:RunningAction, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
@@ -263,8 +261,15 @@ class RunningBarrage {
 		if (triggerBullet != null) {
 			action.currentBullet = action.triggeringBullet = triggerBullet;
 		}
-		action.update(this, delta);
+		executeActionHandle(handle, action, delta);
 		return action;
+	}
+
+	inline function executeActionHandle(handle:ActionHandle, action:RunningAction, delta:Float):Void {
+		if (actionsByHandle[handle] != action) {
+			return;
+		}
+		action.update(this, delta);
 	}
 
 	public inline function stopAction(action:RunningAction) {

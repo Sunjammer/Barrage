@@ -61,14 +61,7 @@ class TestMain {
 		#end
 		failures += run("VM strict native supports Math functions", testVmStrictNativeMathFunctions);
 		failures += run("VM strict native mode rejects unsupported expressions", testVmStrictNativeExpressionMode);
-		#if barrage_legacy
-		failures += run("VM execution parity with legacy runtime", testVmParity);
-		failures += run("VM parity across all shipped examples", testVmParityExamples);
-		failures += run("benchmark VM vs legacy runtime", benchmarkVmVsLegacy);
-		failures += run("benchmark stress profiles", benchmarkStressProfiles);
-		#else
 		failures += run("benchmark VM throughput profiles", benchmarkVmThroughputProfiles);
-		#end
 
 		if (failures == 0) {
 			Sys.println("All tests passed.");
@@ -683,93 +676,6 @@ class TestMain {
 		assertFloatEquals(0, emitter.angles[0], 1e-6, "Expected native math expression to evaluate direction.");
 	}
 
-	#if barrage_legacy
-	static function testVmParity():Void {
-		final source =
-			"barrage called vm_parity\n"
-			+ "\tbullet called source\n"
-			+ "\t\tspeed is 120\n"
-			+ "\t\tdo action\n"
-			+ "\t\t\twait 10 frames\n"
-			+ "\t\t\tdie\n"
-			+ "\taction called start\n"
-			+ "\t\tfire source in aimed direction 0\n"
-			+ "\t\tdo action\n"
-			+ "\t\t\twait 2 frames\n"
-			+ "\t\t\tfire source in incremental direction 15\n"
-			+ "\t\t\trepeat 8 times\n";
-
-		final legacy = runSimulation(source, false, 180);
-		final vm = runSimulation(source, true, 180);
-		assertIntEquals(legacy.emitCount, vm.emitCount, "VM and legacy emit count should match.");
-		assertIntEquals(legacy.killCount, vm.killCount, "VM and legacy kill count should match.");
-		assertStringEquals(simulationDigest(legacy), simulationDigest(vm), "VM and legacy simulation digest should match.");
-	}
-
-	static function testVmParityExamples():Void {
-		final files = [
-			"examples/waveburst.brg",
-			"examples/swarm.brg",
-			"examples/inchworm.brg",
-			"examples/multitarget_demo.brg",
-			"examples/dev.brg",
-			"examples/exhaustive_stress.brg"
-		];
-		for (path in files) {
-			final source = File.getContent(path);
-			final legacy = runSimulation(source, false, 600);
-			final vm = runSimulation(source, true, 600);
-			assertStringEquals(simulationDigest(legacy), simulationDigest(vm), "Parity mismatch for " + path);
-		}
-	}
-
-	static function benchmarkVmVsLegacy():Void {
-		final source = File.getContent("examples/exhaustive_stress.brg");
-
-		final iterations = 30;
-		final legacyTime = benchmark(source, false, iterations, 720);
-		final vmTime = benchmark(source, true, iterations, 720);
-		Sys.println('BENCH legacy=${legacyTime}s vm=${vmTime}s iterations=${iterations}');
-		assertTrue(legacyTime > 0 && vmTime > 0, "Benchmark timings must be positive.");
-		// Guardrail only: VM should be in same order of magnitude while we iterate.
-		assertTrue(vmTime < legacyTime * 5.0, "VM path is unexpectedly slower than legacy.");
-	}
-
-	static function benchmarkStressProfiles():Void {
-		final profiles = [
-			{
-				name: "exhaustive_stress_file",
-				source: File.getContent("examples/exhaustive_stress.brg"),
-				iterations: 20,
-				steps: 720,
-				maxSlowdown: 5.0
-			},
-			{
-				name: "spawn_storm_dense",
-				source: buildSpawnStormProfileSource(),
-				iterations: 40,
-				steps: 360,
-				maxSlowdown: 5.0
-			},
-			{
-				name: "scripted_churn",
-				source: buildScriptedChurnProfileSource(),
-				iterations: 30,
-				steps: 480,
-				maxSlowdown: 5.0
-			}
-		];
-
-		for (p in profiles) {
-			final legacyTime = benchmark(p.source, false, p.iterations, p.steps);
-			final vmTime = benchmark(p.source, true, p.iterations, p.steps);
-			final ratio = vmTime / legacyTime;
-			Sys.println('PROFILE ${p.name} legacy=${legacyTime}s vm=${vmTime}s ratio=${ratio} iterations=${p.iterations} steps=${p.steps}');
-			assertTrue(legacyTime > 0 && vmTime > 0, "Profile benchmark timings must be positive for " + p.name);
-			assertTrue(ratio < p.maxSlowdown, "VM slowdown too high for " + p.name + " (ratio=" + ratio + ")");
-		}
-	}
-	#else
 	static function benchmarkVmThroughputProfiles():Void {
 		final profiles = [
 			{name: "exhaustive_stress_file", source: File.getContent("examples/exhaustive_stress.brg"), iterations: 20, steps: 720},
@@ -777,12 +683,11 @@ class TestMain {
 			{name: "scripted_churn", source: buildScriptedChurnProfileSource(), iterations: 30, steps: 480}
 		];
 		for (p in profiles) {
-			final vmTime = benchmark(p.source, true, p.iterations, p.steps);
+			final vmTime = benchmark(p.source, p.iterations, p.steps);
 			Sys.println('PROFILE ${p.name} vm=${vmTime}s iterations=${p.iterations} steps=${p.steps}');
 			assertTrue(vmTime > 0, "VM benchmark timing must be positive for " + p.name);
 		}
 	}
-	#end
 
 	static function buildSpawnStormProfileSource():String {
 		return "barrage called spawn_storm_dense\n"
@@ -966,10 +871,10 @@ class TestMain {
 		}
 	}
 
-	static function runSimulation(source:String, useVm:Bool, steps:Int):MockEmitter {
+	static function runSimulation(source:String, steps:Int):MockEmitter {
 		final barrage = Barrage.fromString(source, false);
 		final emitter = new MockEmitter();
-		final running = useVm ? barrage.runVm(emitter) : barrage.run(emitter);
+		final running = barrage.run(emitter);
 		running.start();
 		simulate(running, emitter, 1 / 60, steps);
 		return emitter;
@@ -1000,10 +905,10 @@ class TestMain {
 		return Std.string(Math.fround(v * 10000) / 10000);
 	}
 
-	static function benchmark(source:String, useVm:Bool, iterations:Int, steps:Int):Float {
+	static function benchmark(source:String, iterations:Int, steps:Int):Float {
 		final start = Timer.stamp();
 		for (_ in 0...iterations) {
-			runSimulation(source, useVm, steps);
+			runSimulation(source, steps);
 		}
 		return Timer.stamp() - start;
 	}

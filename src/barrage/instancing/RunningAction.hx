@@ -1,7 +1,6 @@
 package barrage.instancing;
 
 import barrage.data.ActionDef;
-import barrage.data.EventDef.EventType;
 import barrage.data.events.ActionEventDef;
 import barrage.data.events.ActionReferenceEventDef;
 import barrage.data.events.DieEventDef;
@@ -15,17 +14,10 @@ import barrage.ir.CompiledAction;
 import barrage.ir.Instruction;
 import barrage.ir.Opcode;
 import barrage.instancing.ActionStateStore.ActionHandle;
- #if barrage_legacy
-import barrage.instancing.events.ITriggerableEvent;
-import barrage.instancing.events.EventFactory;
- #end
 import barrage.instancing.RunningBarrage;
 
 class RunningAction {
 	public var def:ActionDef;
-	#if barrage_legacy
-	public var events:Array<ITriggerableEvent>;
-	#end
 	public var sleepTime(get, set):Float;
 	public var currentBullet(get, set):IBarrageBullet;
 	public var triggeringBullet(get, set):IBarrageBullet;
@@ -41,7 +33,6 @@ class RunningAction {
 	var barrage:RunningBarrage;
 	final stateStore:ActionStateStore;
 	public final stateHandle:ActionHandle;
-	var useVmExecution:Bool;
 	var compiledAction:Null<CompiledAction>;
 	var vmUnrolled:Bool;
 	var vmCycleInstructionCount:Int;
@@ -55,18 +46,12 @@ class RunningAction {
 	public var callingAction(get, set):RunningAction;
 	public var properties:Array<Property>;
 
-	public function new(runningBarrage:RunningBarrage, def:ActionDef, useVmExecution:Bool = false) {
+	public function new(runningBarrage:RunningBarrage, def:ActionDef) {
 		this.def = def;
 		this.stateStore = runningBarrage.getActionStore();
 		this.stateHandle = runningBarrage.allocActionState();
-		#if barrage_legacy
-		this.compiledAction = useVmExecution && runningBarrage.compiledProgram != null ? runningBarrage.compiledProgram.actions[def.id] : null;
-		this.useVmExecution = useVmExecution && this.compiledAction != null;
-		#else
 		this.compiledAction = runningBarrage.compiledProgram != null ? runningBarrage.compiledProgram.actions[def.id] : null;
-		this.useVmExecution = this.compiledAction != null;
-		#end
-		this.vmUnrolled = this.useVmExecution && this.compiledAction != null && this.compiledAction.unrolledCycles > 1;
+		this.vmUnrolled = this.compiledAction != null && this.compiledAction.unrolledCycles > 1;
 		this.vmCycleInstructionCount = this.compiledAction != null ? this.compiledAction.cycleInstructionCount : 0;
 		this.vmUnrolledCycles = this.compiledAction != null ? this.compiledAction.unrolledCycles : 1;
 
@@ -85,27 +70,11 @@ class RunningAction {
 		if (repeatCount < 0)
 			repeatCount = 0;
 		endless = def.endless;
-		if (this.useVmExecution && compiledAction != null && compiledAction.repeatCountOverride != null) {
+		if (compiledAction != null && compiledAction.repeatCountOverride != null) {
 			repeatCount = compiledAction.repeatCountOverride;
 			endless = false;
 		}
-		// #end
-		#if barrage_legacy
-		events = this.useVmExecution ? [] : new Array<ITriggerableEvent>();
-		if (!this.useVmExecution) {
-			for (i in 0...def.events.length) {
-				events.push(EventFactory.create(def.events[i]));
-			}
-		}
-		eventsPerCycle = events.length;
-		#else
-		eventsPerCycle = 0;
-		#end
-		if (this.useVmExecution && compiledAction != null) {
-			eventsPerCycle = compiledAction.instructions.length;
-		} else if (this.useVmExecution) {
-			eventsPerCycle = def.events.length;
-		}
+		eventsPerCycle = compiledAction.instructions.length;
 		runEvents = 0;
 		completedCycles = 0;
 	}
@@ -120,67 +89,37 @@ class RunningAction {
 	}
 
 	public function update(runningBarrage:RunningBarrage, delta:Float):Void {
-		#if barrage_legacy
-		if (!useVmExecution && events.length == 0) {
-			runningBarrage.stopAction(this);
-			return;
-		} else {
-		#else
-		{
-		#end
-			actionTime += delta;
-			sleepTime -= delta;
-			if (sleepTime <= 0) {
-				// delta += Math.abs(sleepTime);
-				runningBarrage.setScriptActionTimeVars(actionTime);
-				runningBarrage.setScriptRepeatCountVars(completedCycles);
-				if (compiledAction != null) {
-					var processedThisTick = 0;
-					while (runEvents < eventsPerCycle) {
-						final instr = compiledAction.instructions[runEvents++];
-						runVmInstruction(runningBarrage, instr, delta);
-						processedThisTick++;
-						if (isWaitOpcode(instr.opcode)) {
-							break;
-						}
-						if (vmUnrolled && processedThisTick >= vmCycleInstructionCount) {
-							break;
-						}
-					}
-					if (vmUnrolled) {
-						if (sleepTime <= 0 && vmCycleInstructionCount > 0 && (runEvents % vmCycleInstructionCount) == 0) {
-							completedCycles++;
-							if (completedCycles >= vmUnrolledCycles) {
-								runningBarrage.stopAction(this);
-							}
-						}
-						return;
-					}
-				#if barrage_legacy
-				else {
-					while (runEvents < eventsPerCycle) {
-						var e = events[runEvents++];
-						runEvent(runningBarrage, e, delta);
-						if (e.getType() == EventType.WAIT) {
-							break;
-						}
+		actionTime += delta;
+		sleepTime -= delta;
+		if (sleepTime <= 0) {
+			runningBarrage.setScriptActionTimeVars(actionTime);
+			runningBarrage.setScriptRepeatCountVars(completedCycles);
+			var processedThisTick = 0;
+			while (runEvents < eventsPerCycle) {
+				final instr = compiledAction.instructions[runEvents++];
+				runVmInstruction(runningBarrage, instr, delta);
+				processedThisTick++;
+				if (isWaitOpcode(instr.opcode)) {
+					break;
+				}
+				if (vmUnrolled && processedThisTick >= vmCycleInstructionCount) {
+					break;
+				}
+			}
+			if (vmUnrolled) {
+				if (sleepTime <= 0 && vmCycleInstructionCount > 0 && (runEvents % vmCycleInstructionCount) == 0) {
+					completedCycles++;
+					if (completedCycles >= vmUnrolledCycles) {
+						runningBarrage.stopAction(this);
 					}
 				}
-				#end
-				}
-				if (runEvents == eventsPerCycle && sleepTime <= 0) {
-					repeat(runningBarrage);
-				}
+				return;
+			}
+			if (runEvents == eventsPerCycle && sleepTime <= 0) {
+				repeat(runningBarrage);
 			}
 		}
 	}
-
-	#if barrage_legacy
-	inline function runEvent(runningBarrage:RunningBarrage, e:ITriggerableEvent, delta:Float):Void {
-		e.hasRun = true;
-		e.trigger(this, runningBarrage, delta);
-	}
-	#end
 
 	inline function isWaitOpcode(opcode:Opcode):Bool {
 		return switch (opcode) {
