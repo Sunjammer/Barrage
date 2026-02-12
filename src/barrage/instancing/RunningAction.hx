@@ -2,7 +2,17 @@ package barrage.instancing;
 
 import barrage.data.ActionDef;
 import barrage.data.EventDef.EventType;
+import barrage.data.events.ActionEventDef;
+import barrage.data.events.ActionReferenceEventDef;
+import barrage.data.events.DieEventDef;
+import barrage.data.events.FireEventDef;
+import barrage.data.events.PropertySetDef;
+import barrage.data.events.PropertyTweenDef;
+import barrage.data.events.WaitDef;
+import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
+import barrage.ir.CompiledAction;
+import barrage.ir.Opcode;
 import barrage.instancing.events.ITriggerableEvent;
 import barrage.instancing.RunningBarrage;
 import barrage.instancing.events.EventFactory;
@@ -20,8 +30,14 @@ class RunningAction {
 	public var prevPositionY:Float;
 	public var actionTime:Float;
 	public var prevDelta:Float;
+	public var enterSerial:Int;
 
 	var barrage:RunningBarrage;
+	var useVmExecution:Bool;
+	var compiledAction:Null<CompiledAction>;
+	var vmUnrolled:Bool;
+	var vmCycleInstructionCount:Int;
+	var vmUnrolledCycles:Int;
 	var repeatCount:Int;
 	var endless:Bool;
 	var completedCycles:Int;
@@ -31,10 +47,16 @@ class RunningAction {
 	public var callingAction:RunningAction;
 	public var properties:Array<Property>;
 
-	public function new(runningBarrage:RunningBarrage, def:ActionDef) {
+	public function new(runningBarrage:RunningBarrage, def:ActionDef, useVmExecution:Bool = false) {
 		this.def = def;
+		this.compiledAction = useVmExecution && runningBarrage.compiledProgram != null ? runningBarrage.compiledProgram.actions[def.id] : null;
+		this.useVmExecution = useVmExecution && this.compiledAction != null;
+		this.vmUnrolled = this.useVmExecution && this.compiledAction != null && this.compiledAction.unrolledCycles > 1;
+		this.vmCycleInstructionCount = this.compiledAction != null ? this.compiledAction.cycleInstructionCount : 0;
+		this.vmUnrolledCycles = this.compiledAction != null ? this.compiledAction.unrolledCycles : 1;
 
 		prevAngle = prevSpeed = prevAccel = sleepTime = prevDelta = prevPositionX = prevPositionY = 0;
+		enterSerial = 0;
 
 		properties = [];
 		for (p in def.properties) {
@@ -48,12 +70,23 @@ class RunningAction {
 		if (repeatCount < 0)
 			repeatCount = 0;
 		endless = def.endless;
+		if (this.useVmExecution && compiledAction != null && compiledAction.repeatCountOverride != null) {
+			repeatCount = compiledAction.repeatCountOverride;
+			endless = false;
+		}
 		// #end
-		events = new Array<ITriggerableEvent>();
-		for (i in 0...def.events.length) {
-			events.push(EventFactory.create(def.events[i]));
+		events = this.useVmExecution ? [] : new Array<ITriggerableEvent>();
+		if (!this.useVmExecution) {
+			for (i in 0...def.events.length) {
+				events.push(EventFactory.create(def.events[i]));
+			}
 		}
 		eventsPerCycle = events.length;
+		if (this.useVmExecution && compiledAction != null) {
+			eventsPerCycle = compiledAction.instructions.length;
+		} else if (this.useVmExecution) {
+			eventsPerCycle = def.events.length;
+		}
 		runEvents = 0;
 		completedCycles = 0;
 	}
@@ -68,7 +101,7 @@ class RunningAction {
 	}
 
 	public function update(runningBarrage:RunningBarrage, delta:Float):Void {
-		if (events.length == 0) {
+		if (!useVmExecution && events.length == 0) {
 			runningBarrage.stopAction(this);
 			return;
 		} else {
@@ -76,12 +109,40 @@ class RunningAction {
 			sleepTime -= delta;
 			if (sleepTime <= 0) {
 				// delta += Math.abs(sleepTime);
-				runningBarrage.owner.executor.variables.set("actiontime", actionTime);
-				while (runEvents < eventsPerCycle) {
-					var e = events[runEvents++];
-					runEvent(runningBarrage, e, delta);
-					if (e.getType() == EventType.WAIT) {
-						break;
+				final vars = runningBarrage.owner.executor.variables;
+				vars.set("actiontime", actionTime);
+				vars.set("actionTime", actionTime);
+				vars.set("repeatcount", completedCycles);
+				vars.set("repeatCount", completedCycles);
+				if (useVmExecution && compiledAction != null) {
+					var processedThisTick = 0;
+					while (runEvents < eventsPerCycle) {
+						final instr = compiledAction.instructions[runEvents++];
+						runVmInstruction(runningBarrage, instr.opcode, instr.eventIndex, delta);
+						processedThisTick++;
+						if (instr.opcode == Opcode.WAIT) {
+							break;
+						}
+						if (vmUnrolled && processedThisTick >= vmCycleInstructionCount) {
+							break;
+						}
+					}
+					if (vmUnrolled) {
+						if (sleepTime <= 0 && vmCycleInstructionCount > 0 && (runEvents % vmCycleInstructionCount) == 0) {
+							completedCycles++;
+							if (completedCycles >= vmUnrolledCycles) {
+								runningBarrage.stopAction(this);
+							}
+						}
+						return;
+					}
+				} else {
+					while (runEvents < eventsPerCycle) {
+						var e = events[runEvents++];
+						runEvent(runningBarrage, e, delta);
+						if (e.getType() == EventType.WAIT) {
+							break;
+						}
 					}
 				}
 				if (runEvents == eventsPerCycle && sleepTime <= 0) {
@@ -93,8 +154,136 @@ class RunningAction {
 
 	inline function runEvent(runningBarrage:RunningBarrage, e:ITriggerableEvent, delta:Float):Void {
 		e.hasRun = true;
-		runningBarrage.owner.executor.variables.set("repeatcount", completedCycles);
 		e.trigger(this, runningBarrage, delta);
+	}
+
+	inline function runVmInstruction(runningBarrage:RunningBarrage, opcode:Opcode, eventIndex:Int, delta:Float):Void {
+		switch (opcode) {
+			case WAIT:
+				vmWait(runningBarrage, cast def.events[eventIndex]);
+			case FIRE:
+				vmFire(runningBarrage, cast def.events[eventIndex], delta);
+			case PROPERTY_SET:
+				vmPropertySet(runningBarrage, cast def.events[eventIndex]);
+			case PROPERTY_TWEEN:
+				vmPropertyTween(runningBarrage, cast def.events[eventIndex], delta);
+			case ACTION:
+				vmAction(runningBarrage, cast def.events[eventIndex], delta);
+			case ACTION_REF:
+				vmActionRef(runningBarrage, cast def.events[eventIndex], delta);
+			case DIE:
+				vmDie(runningBarrage, cast def.events[eventIndex]);
+		}
+	}
+
+	inline function vmWait(runningBarrage:RunningBarrage, waitDef:WaitDef):Void {
+		var wait:Float;
+		if (waitDef.scripted) {
+			wait = waitDef.waitTimeScript.eval(runningBarrage.owner.executor, enterSerial, cycleCount, runningBarrage.tickCount);
+		} else {
+			wait = waitDef.waitTime;
+		}
+		switch (waitDef.durationType) {
+			case DurationType.SECONDS:
+				sleepTime += wait;
+			case DurationType.FRAMES:
+				sleepTime += wait * (1 / runningBarrage.owner.frameRate);
+		}
+	}
+
+	inline function vmFire(runningBarrage:RunningBarrage, fireDef:FireEventDef, delta:Float):Void {
+		final bulletID = fireDef.bulletID;
+		currentBullet = runningBarrage.fireDef(this, fireDef, bulletID, delta);
+		if (bulletID != -1) {
+			final bd = runningBarrage.owner.bullets[bulletID];
+			if (bd.action != -1) {
+				runningBarrage.runActionByID(this, bd.action, currentBullet);
+			}
+		}
+	}
+
+	inline function vmPropertySet(runningBarrage:RunningBarrage, d:PropertySetDef):Void {
+		final bullet = triggeringBullet;
+		if (d.speed != null) {
+			if (d.speed.modifier.has(RELATIVE)) {
+				bullet.speed += d.speed.get(runningBarrage, this);
+			} else {
+				bullet.speed = d.speed.get(runningBarrage, this);
+			}
+		}
+		if (d.direction != null) {
+			var ang:Float = 0;
+			if (d.direction.modifier.has(AIMED)) {
+				ang = runningBarrage.getAngleToTarget(bullet.posX, bullet.posY, this, d.direction.target);
+			} else {
+				ang = d.direction.get(runningBarrage, this);
+			}
+			if (d.relative) {
+				bullet.angle += ang;
+			} else {
+				bullet.angle = ang;
+			}
+		}
+		if (d.acceleration != null) {
+			final accel = d.acceleration.get(runningBarrage, this);
+			if (d.relative) {
+				bullet.acceleration += accel;
+			} else {
+				bullet.acceleration = accel;
+			}
+		}
+	}
+
+	inline function vmPropertyTween(runningBarrage:RunningBarrage, d:PropertyTweenDef, delta:Float):Void {
+		var tweenTime:Float;
+		if (d.scripted) {
+			tweenTime = d.tweenTimeScript.eval(runningBarrage.owner.executor, enterSerial, cycleCount, runningBarrage.tickCount);
+		} else {
+			tweenTime = d.tweenTime;
+		}
+		if (d.durationType == DurationType.FRAMES) {
+			tweenTime *= (1 / runningBarrage.owner.frameRate);
+		}
+		final bullet = triggeringBullet;
+		final animator = runningBarrage.getAnimator(bullet);
+		if (d.speed != null) {
+			final anim = animator.getSpeed();
+			var v = d.speed.get(runningBarrage, this);
+			if (d.relative) v = bullet.speed + v;
+			anim.retarget(bullet.speed, v, tweenTime, delta);
+		}
+		if (d.direction != null) {
+			final anim = animator.getAngle();
+			var ang:Float = 0;
+			if (d.direction.modifier.has(AIMED)) {
+				final current = bullet.angle;
+				ang = runningBarrage.getAngleToTarget(bullet.posX, bullet.posY, this, d.direction.target);
+				while (ang - current > 180) ang -= 360;
+				while (ang - current < -180) ang += 360;
+			} else {
+				ang = d.direction.get(runningBarrage, this);
+			}
+			if (d.relative) ang = bullet.angle + ang;
+			anim.retarget(bullet.angle, ang, tweenTime, delta);
+		}
+		if (d.acceleration != null) {
+			final anim = animator.getAcceleration();
+			var accel = d.acceleration.get(runningBarrage, this);
+			if (d.relative) accel = bullet.acceleration + accel;
+			anim.retarget(bullet.acceleration, accel, tweenTime, delta);
+		}
+	}
+
+	inline function vmAction(runningBarrage:RunningBarrage, d:ActionEventDef, delta:Float):Void {
+		runningBarrage.runActionByID(this, d.actionID, triggeringBullet, null, delta);
+	}
+
+	inline function vmActionRef(runningBarrage:RunningBarrage, d:ActionReferenceEventDef, delta:Float):Void {
+		runningBarrage.runActionByID(this, d.actionID, triggeringBullet, d.overrides, delta);
+	}
+
+	inline function vmDie(runningBarrage:RunningBarrage, d:DieEventDef):Void {
+		runningBarrage.emitter.kill(triggeringBullet);
 	}
 
 	public function getProperty(name:String):Property {
@@ -109,6 +298,7 @@ class RunningAction {
 	}
 
 	public inline function enter(callingAction:RunningAction, barrage:RunningBarrage, ?overrides:Array<Property>) {
+		enterSerial++;
 		actionTime = 0;
 		if (overrides != null) {
 			for (o in overrides) {
@@ -129,5 +319,11 @@ class RunningAction {
 
 	public inline function exit(barrage:RunningBarrage) {
 		currentBullet = null;
+	}
+
+	public var cycleCount(get, never):Int;
+
+	inline function get_cycleCount():Int {
+		return completedCycles;
 	}
 }

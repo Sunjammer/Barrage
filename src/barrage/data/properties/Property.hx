@@ -3,6 +3,7 @@ package barrage.data.properties;
 import barrage.instancing.RunningAction;
 import barrage.instancing.RunningBarrage;
 import barrage.data.targets.TargetSelector;
+import barrage.script.ScriptValue;
 import haxe.ds.Vector;
 import haxe.EnumFlags;
 
@@ -19,7 +20,7 @@ class Property {
 	public var isRandom:Bool;
 	public var constValue:Float = 0;
 	public var constValueVec:Vector<Float>;
-	public var script:Null<hscript.Expr>;
+	public var script:Null<ScriptValue>;
 	public var scripted:Bool = false;
 	public var name:String;
 	public var target:TargetSelector = PLAYER;
@@ -51,7 +52,9 @@ class Property {
 
 	public inline function get(runningBarrage:RunningBarrage, action:RunningAction):Float {
 		if (scripted) {
-			return runningBarrage.owner.executor.execute(script);
+			final serial = action == null ? -1 : action.enterSerial;
+			final cycle = action == null ? 0 : action.cycleCount;
+			return script.eval(runningBarrage.owner.executor, serial, cycle, runningBarrage.tickCount);
 		} else {
 			// trace("Value: " + constValue);
 			return constValue;
@@ -60,7 +63,7 @@ class Property {
 
 	public inline function getVector(runningBarrage:RunningBarrage, action:RunningAction):Vector<Float> {
 		if (scripted) {
-			return runningBarrage.owner.executor.execute(script);
+			return runningBarrage.owner.executor.execute(script.expr);
 		} else {
 			return constValueVec;
 		}
