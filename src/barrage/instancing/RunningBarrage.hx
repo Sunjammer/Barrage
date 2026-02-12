@@ -2,12 +2,15 @@ package barrage.instancing;
 
 import barrage.Barrage;
 import barrage.data.BulletDef;
+import barrage.data.events.FireEventDef;
 import barrage.data.properties.Property;
+import barrage.ir.CompiledBarrage;
 import barrage.data.targets.TargetSelector;
 import barrage.instancing.animation.Animator;
 import barrage.instancing.events.FireEvent;
 import barrage.instancing.IOrigin;
 import haxe.ds.GenericStack;
+import haxe.ds.ObjectMap;
 
 typedef Vec2 = {x:Float, y:Float}
 
@@ -24,29 +27,48 @@ class RunningBarrage {
 	public var speedScale:Float;
 	public var accelScale:Float;
 	public var rng:IRng;
+	public var useVmExecution:Bool;
+	public var compiledProgram:Null<CompiledBarrage>;
+	public var tickCount:Int = 0;
 
 	static var basePositionVec:Vec2 = {x: 0, y: 0};
 
 	var started:Bool;
 	var lastDelta:Float = 0;
+	var animatorByTarget:ObjectMap<IBarrageBullet, Animator>;
+	var bulletNameToId:Map<String, Int>;
+	var bulletsByDef:Array<Array<IBarrageBullet>>;
 
 	public var emitter:IBulletEmitter;
 
-	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng) {
+	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng, useVmExecution:Bool = false) {
 		this.speedScale = speedScale;
 		this.accelScale = accelScale;
 		this.rng = rng;
+		this.useVmExecution = useVmExecution;
 		this.emitter = emitter;
 		this.owner = owner;
+		this.compiledProgram = useVmExecution ? owner.compile() : null;
 		activeActions = [];
 		bullets = new GenericStack<IBarrageBullet>();
 		animators = new GenericStack<Animator>();
+		animatorByTarget = new ObjectMap<IBarrageBullet, Animator>();
+		bulletNameToId = new Map<String, Int>();
+		bulletsByDef = [];
+		for (i in 0...owner.bullets.length) {
+			final def = owner.bullets[i];
+			if (def != null) {
+				bulletNameToId.set(def.name.toLowerCase(), i);
+			}
+		}
 	}
 
 	public function start():Void {
 		time = lastDelta = 0;
+		tickCount = 0;
 		owner.executor.variables.set("barragetime", time);
-		runAction(null, new RunningAction(this, owner.start));
+		owner.executor.variables.set("barrageTime", time);
+		runAction(null, new RunningAction(this, owner.start, useVmExecution));
 		started = true;
 	}
 
@@ -62,11 +84,16 @@ class RunningBarrage {
 			return;
 		time += delta;
 		lastDelta = delta;
+		tickCount++;
 
 		cleanBullets();
+		if ((tickCount % 120) == 0) {
+			pruneBulletBuckets();
+		}
 		updateAnimators(delta);
 
 		owner.executor.variables.set("barragetime", time);
+		owner.executor.variables.set("barrageTime", time);
 
 		if (activeActions.length == 0) {
 			stop();
@@ -87,27 +114,41 @@ class RunningBarrage {
 		}
 	}
 
+	inline function pruneBulletBuckets():Void {
+		for (bucket in bulletsByDef) {
+			if (bucket == null)
+				continue;
+			var i = bucket.length;
+			while (i-- > 0) {
+				if (!bucket[i].active) {
+					bucket.splice(i, 1);
+				}
+			}
+		}
+	}
+
 	inline function updateAnimators(delta:Float) {
 		for (a in animators) {
 			if (a.update(delta) == false) {
 				animators.remove(a);
+				animatorByTarget.remove(a.target);
 			}
 		}
 	}
 
 	public function getAnimator(target:IBarrageBullet):Animator {
-		for (a in animators) {
-			if (a.target == target)
-				return a;
+		if (animatorByTarget.exists(target)) {
+			return animatorByTarget.get(target);
 		}
 		var a = new Animator(target);
 		animators.add(a);
+		animatorByTarget.set(target, a);
 		return a;
 	}
 
 	public inline function runActionByID(triggerAction:RunningAction, id:Int, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
 			delta:Float = 0):RunningAction {
-		return runAction(triggerAction, new RunningAction(this, owner.actions[id]), triggerBullet, overrides, delta);
+		return runAction(triggerAction, new RunningAction(this, owner.actions[id], useVmExecution), triggerBullet, overrides, delta);
 	}
 
 	public inline function runAction(triggerAction:RunningAction, action:RunningAction, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
@@ -139,6 +180,8 @@ class RunningBarrage {
 			stopAction(activeActions[0]);
 		}
 		emitter = null;
+		animatorByTarget = new ObjectMap<IBarrageBullet, Animator>();
+		bulletsByDef = [];
 	}
 
 	function applyProperty(origin:Vec2, base:Float, prev:Float, prop:Property, runningBarrage:RunningBarrage, runningAction:RunningAction):Float {
@@ -186,14 +229,16 @@ class RunningBarrage {
 
 	function findNearestBulletByType(typeName:String, action:RunningAction):IOrigin {
 		final origin = getOrigin(action);
-		final targetType = typeName.toLowerCase();
+		final targetId = bulletNameToId.get(typeName.toLowerCase());
+		if (targetId == null)
+			return emitter;
+		final bucket = bulletsByDef[targetId];
+		if (bucket == null)
+			return emitter;
 		var nearest:IBarrageBullet = null;
 		var bestDist2 = Math.POSITIVE_INFINITY;
-		for (bullet in bullets) {
-			if (!bullet.active || bullet.id < 0 || bullet.id >= owner.bullets.length)
-				continue;
-			final def = owner.bullets[bullet.id];
-			if (def == null || def.name.toLowerCase() != targetType)
+		for (bullet in bucket) {
+			if (!bullet.active)
 				continue;
 			final dx = bullet.posX - origin.posX;
 			final dy = bullet.posY - origin.posY;
@@ -233,6 +278,10 @@ class RunningBarrage {
 	}
 
 	public function fire(action:RunningAction, event:FireEvent, bulletID:Int, delta:Float):IBarrageBullet {
+		return fireDef(action, event.def, bulletID, delta);
+	}
+
+	public function fireDef(action:RunningAction, eventDef:FireEventDef, bulletID:Int, delta:Float):IBarrageBullet {
 		var bd:BulletDef = bulletID == -1 ? owner.defaultBullet : owner.bullets[bulletID];
 
 		var origin = getOrigin(action);
@@ -250,12 +299,12 @@ class RunningBarrage {
 
 		basePosition.x = origin.posX;
 		basePosition.y = origin.posY;
-		if (event.def.position != null) {
-			var vec = event.def.position.getVector(this, action);
-			if (event.def.position.modifier.has(RELATIVE)) {
+		if (eventDef.position != null) {
+			var vec = eventDef.position.getVector(this, action);
+			if (eventDef.position.modifier.has(RELATIVE)) {
 				basePosition.x = origin.posX + vec[0];
 				basePosition.y = origin.posY + vec[1];
-			} else if (event.def.position.modifier.has(INCREMENTAL)) {
+			} else if (eventDef.position.modifier.has(INCREMENTAL)) {
 				basePosition.x = lastPositionX + vec[0];
 				basePosition.y = lastPositionY + vec[1];
 			}
@@ -267,15 +316,15 @@ class RunningBarrage {
 			baseDirection = bd.direction.get(this, action);
 		}
 
-		if (event.def.speed != null) {
-			baseSpeed = applyProperty(basePosition, baseSpeed, lastSpeed, event.def.speed, this, action);
+		if (eventDef.speed != null) {
+			baseSpeed = applyProperty(basePosition, baseSpeed, lastSpeed, eventDef.speed, this, action);
 		}
-		if (event.def.acceleration != null) {
-			baseAccel = applyProperty(basePosition, baseAccel, lastAcceleration, event.def.acceleration, this, action);
+		if (eventDef.acceleration != null) {
+			baseAccel = applyProperty(basePosition, baseAccel, lastAcceleration, eventDef.acceleration, this, action);
 		}
-		if (event.def.direction != null) {
-			baseDirection = applyProperty(basePosition, baseDirection, lastDirection, event.def.direction, this, action);
-			if (event.def.direction.modifier.has(RELATIVE)) {
+		if (eventDef.direction != null) {
+			baseDirection = applyProperty(basePosition, baseDirection, lastDirection, eventDef.direction, this, action);
+			if (eventDef.direction.modifier.has(RELATIVE)) {
 				baseDirection = action.triggeringBullet.angle + baseDirection;
 			}
 		}
@@ -292,6 +341,12 @@ class RunningBarrage {
 		lastBulletFired.speed = spd;
 		lastBulletFired.angle = baseDirection;
 		bullets.add(lastBulletFired);
+		if (bulletID >= 0) {
+			if (bulletsByDef[bulletID] == null) {
+				bulletsByDef[bulletID] = [];
+			}
+			bulletsByDef[bulletID].push(lastBulletFired);
+		}
 		return lastBulletFired;
 	}
 }

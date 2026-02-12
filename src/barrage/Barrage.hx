@@ -4,6 +4,8 @@ import barrage.Barrage;
 import barrage.data.ActionDef;
 import barrage.data.BulletDef;
 import barrage.data.targets.TargetSelector;
+import barrage.ir.CompiledBarrage;
+import barrage.ir.IRCompiler;
 import barrage.instancing.IBulletEmitter;
 import barrage.instancing.IRng;
 import barrage.instancing.RunningBarrage;
@@ -14,6 +16,7 @@ import hscript.Interp;
 @:allow(barrage.parser.Parser)
 class Barrage {
 	static final cache = new Map<String, Barrage>();
+	static final compiledCache = new Map<String, CompiledBarrage>();
 
 	public var name:String;
 	public var difficulty(get, set):Int;
@@ -24,6 +27,7 @@ class Barrage {
 	public var executor:Interp;
 	public var frameRate:Int;
 	public var targets:Map<String, TargetSelector>;
+	var compiled:Null<CompiledBarrage>;
 
 	public function new() {
 		defaultBullet = new BulletDef("Default");
@@ -82,11 +86,21 @@ class Barrage {
 		final scriptMath = new ScriptMath(activeRng);
 		executor.variables.set("math", scriptMath);
 		executor.variables.set("Math", scriptMath);
-		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng);
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false);
+	}
+
+	public inline function runVm(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng):RunningBarrage {
+		final activeRng = rng == null ? new SeededRng(0) : rng;
+		executor.variables.set("rand", activeRng.nextFloat);
+		final scriptMath = new ScriptMath(activeRng);
+		executor.variables.set("math", scriptMath);
+		executor.variables.set("Math", scriptMath);
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true);
 	}
 
 	public static function clearCache():Void {
 		cache.clear();
+		compiledCache.clear();
 	}
 
 	public static inline function fromString(str:String, useCache:Bool = true):Barrage {
@@ -102,6 +116,41 @@ class Barrage {
 		} else {
 			return Parser.parse(str);
 		}
+	}
+
+	public function compile(useCache:Bool = true):CompiledBarrage {
+		if (!useCache) {
+			return compiled = IRCompiler.compile(this);
+		}
+		if (compiled != null) {
+			return compiled;
+		}
+		return compiled = IRCompiler.compile(this);
+	}
+
+	public inline function compileToBytes(useCache:Bool = true):haxe.io.Bytes {
+		return compile(useCache).toBytes();
+	}
+
+	public static inline function compileString(source:String, useCache:Bool = true):CompiledBarrage {
+		if (useCache && compiledCache.exists(source)) {
+			return compiledCache.get(source);
+		}
+		final barrage = fromString(source, useCache);
+		final compiled = IRCompiler.compile(barrage, source);
+		barrage.compiled = compiled;
+		if (useCache) {
+			compiledCache.set(source, compiled);
+		}
+		return compiled;
+	}
+
+	public static inline function compileStringToBytes(source:String, useCache:Bool = true):haxe.io.Bytes {
+		return compileString(source, useCache).toBytes();
+	}
+
+	public static inline function fromCompiledBytes(bytes:haxe.io.Bytes):Barrage {
+		return CompiledBarrage.fromBytes(bytes).instantiate();
 	}
 }
 
