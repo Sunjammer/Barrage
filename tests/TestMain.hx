@@ -51,6 +51,7 @@ class TestMain {
 		failures += run("dev example emits expected first incremental outcome", testDevExampleOutcome);
 		failures += run("particle governor: bullet moves expected distance over script lifetime", testBulletMotionOverScriptLifetime);
 		failures += run("particle governor: acceleration affects traveled distance", testBulletMotionWithAcceleration);
+		failures += run("SoA handle lifecycle maps and releases bullets correctly", testSoaHandleLifecycle);
 		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
 		failures += run("VM execution parity with legacy runtime", testVmParity);
 		failures += run("VM parity across all shipped examples", testVmParityExamples);
@@ -521,6 +522,32 @@ class TestMain {
 		final bullet = emitter.emitted[0];
 		// Semi-implicit Euler in MockEmitter.update should land close to 20 units.
 		assertFloatEquals(20, bullet.posX, 0.5, "Bullet should travel ~20 units in 2 seconds under +10 accel.");
+	}
+
+	static function testSoaHandleLifecycle():Void {
+		final source =
+			"barrage called soa_handles\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 100\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction 0\n"
+			+ "\t\twait 10 frames\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final running = barrage.run(emitter);
+		running.start();
+
+		assertIntEquals(1, emitter.emitted.length, "Expected one emitted bullet.");
+		final bullet = emitter.emitted[0];
+		final handleBefore = running.getHandleForBullet(bullet);
+		assertTrue(handleBefore != -1, "Expected live bullet to have a valid SoA handle.");
+
+		running.killBullet(bullet);
+		assertFalse(bullet.active, "killBullet should deactivate bullet.");
+
+		running.update(1 / 60);
+		final handleAfter = running.getHandleForBullet(bullet);
+		assertTrue(handleAfter == -1, "Expected handle mapping removed after cleanup.");
 	}
 
 	static function testRuntimeProfilingMetrics():Void {
