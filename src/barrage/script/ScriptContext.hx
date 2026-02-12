@@ -7,13 +7,15 @@ import hscript.Interp;
 class ScriptContext {
 	public var rng:IRng;
 	public var profile:RuntimeProfile;
+	public var strictNativeExpressions:Bool;
 
 	final vars:Map<String, Float>;
 	var interpDirty:Bool = true;
 
-	public function new(rng:IRng, profile:RuntimeProfile) {
+	public function new(rng:IRng, profile:RuntimeProfile, strictNativeExpressions:Bool = false) {
 		this.rng = rng;
 		this.profile = profile;
+		this.strictNativeExpressions = strictNativeExpressions;
 		this.vars = new Map<String, Float>();
 	}
 

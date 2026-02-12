@@ -45,6 +45,9 @@ class ScriptValue {
 			ctx.profile.nativeScriptEvals++;
 			nativeExpr.eval(interp, ctx);
 		} else {
+			if (ctx.strictNativeExpressions) {
+				throw 'Unsupported non-native expression in strict mode: ' + source;
+			}
 			ctx.profile.fallbackScriptEvals++;
 			ctx.syncToInterp(interp);
 			interp.execute(expr);

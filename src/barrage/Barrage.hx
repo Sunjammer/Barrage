@@ -86,16 +86,17 @@ class Barrage {
 		final scriptMath = new ScriptMath(activeRng);
 		executor.variables.set("math", scriptMath);
 		executor.variables.set("Math", scriptMath);
-		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false);
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false, false);
 	}
 
-	public inline function runVm(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng):RunningBarrage {
+	public inline function runVm(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng,
+			strictNativeExpressions:Bool = true):RunningBarrage {
 		final activeRng = rng == null ? new SeededRng(0) : rng;
 		executor.variables.set("rand", activeRng.nextFloat);
 		final scriptMath = new ScriptMath(activeRng);
 		executor.variables.set("math", scriptMath);
 		executor.variables.set("Math", scriptMath);
-		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true);
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true, strictNativeExpressions);
 	}
 
 	public static function clearCache():Void {

@@ -53,6 +53,7 @@ class TestMain {
 		failures += run("particle governor: acceleration affects traveled distance", testBulletMotionWithAcceleration);
 		failures += run("SoA handle lifecycle maps and releases bullets correctly", testSoaHandleLifecycle);
 		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
+		failures += run("VM strict native mode rejects unsupported expressions", testVmStrictNativeExpressionMode);
 		failures += run("VM execution parity with legacy runtime", testVmParity);
 		failures += run("VM parity across all shipped examples", testVmParityExamples);
 		failures += run("benchmark VM vs legacy runtime", benchmarkVmVsLegacy);
@@ -584,6 +585,24 @@ class TestMain {
 		assertTrue(running.profile.peakActiveBullets > 0, "Expected peak active bullets > 0.");
 	}
 
+	static function testVmStrictNativeExpressionMode():Void {
+		final source =
+			"barrage called strict_native\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is (difficulty > 0 ? 100 : 50)\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction 0\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final strictRunner = barrage.runVm(emitter, 1.0, 1.0, new SeededRng(1), true);
+		assertThrows(function() {
+			strictRunner.start();
+		}, "Unsupported non-native expression in strict mode");
+
+		final relaxedRunner = barrage.runVm(new MockEmitter(), 1.0, 1.0, new SeededRng(1), false);
+		relaxedRunner.start();
+	}
+
 	static function testVmParity():Void {
 		final source =
 			"barrage called vm_parity\n"
@@ -764,6 +783,18 @@ class TestMain {
 			final msg = parseError == null ? Std.string(e) : parseError.info;
 			if (msg.indexOf(expectedText) == -1) {
 				throw 'Expected parse error containing "' + expectedText + '", actual: ' + msg;
+			}
+		}
+	}
+
+	static function assertThrows(fn:Void->Void, expectedText:String):Void {
+		try {
+			fn();
+			throw "Expected throw containing: " + expectedText;
+		} catch (e:Dynamic) {
+			final msg = Std.string(e);
+			if (msg.indexOf(expectedText) == -1) {
+				throw 'Expected error containing "' + expectedText + '", actual: ' + msg;
 			}
 		}
 	}
