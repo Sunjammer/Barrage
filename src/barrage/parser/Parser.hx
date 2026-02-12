@@ -15,6 +15,7 @@ import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
 import barrage.script.NativeExpr;
 import barrage.script.ScriptValue;
+import barrage.script.ScriptVectorValue;
 import barrage.data.targets.TargetSelector;
 import barrage.parser.Parser.Block;
 import barrage.parser.Token;
@@ -26,7 +27,7 @@ class Parser {
 	static var number:EReg = ~/^-?(?:\d+\.?\d*|\.\d+)$/;
 	static var math:EReg = ~/^\([.\d *\-\+\/]+\)$/;
 	static var script:EReg = ~/^\(.*\)$/;
-	static var vector:EReg = ~/\[(-*\d+(\.(\d+))*,*){2}\]/;
+	static var vector:EReg = ~/^\[.*\]$/;
 	static var stack:Array<BarrageItemDef>;
 	static var bulletIdMap:Map<String, Int>;
 	static var actionIdMap:Map<String, Int>;
@@ -345,13 +346,18 @@ class Parser {
 		var buffer:Array<String> = [];
 		var char:String = bank.pop();
 		var level:Int = 0;
+		var bracketLevel:Int = 0;
 		while (true) {
 			if (char == ")") {
 				level++;
 			} else if (char == "(") {
 				level--;
+			} else if (char == "]") {
+				bracketLevel++;
+			} else if (char == "[") {
+				bracketLevel--;
 			}
-			if (char == " " && level == 0)
+			if (char == " " && level == 0 && bracketLevel == 0)
 				break;
 			buffer.push(char);
 			if (bank.length == 0)
@@ -385,15 +391,59 @@ class Parser {
 			case TNumber:
 				return Std.parseFloat(data);
 			case TVector:
-				var vec = new Vector<Float>(2);
-				var substr = data.substr(1, data.length - 1);
-				var list = substr.split(",");
-				vec[0] = Std.parseFloat(list[0]);
-				vec[1] = Std.parseFloat(list[1]);
-				return vec;
+				final parts = splitVectorParts(data, lineNo);
+				final xText = StringTools.trim(parts[0]);
+				final yText = StringTools.trim(parts[1]);
+				if (number.match(xText) && number.match(yText)) {
+					var vec = new Vector<Float>(2);
+					vec[0] = Std.parseFloat(xText);
+					vec[1] = Std.parseFloat(yText);
+					return vec;
+				}
+				try {
+					return new ScriptVectorValue(new ScriptValue(xText), new ScriptValue(yText));
+				} catch (_:Dynamic) {
+					throw new ParseError(lineNo, 'Unsupported vector expression: ' + data);
+				}
 			default:
 				return data;
 		}
+	}
+
+	static function splitVectorParts(data:String, lineNo:Int):Array<String> {
+		final trimmed = StringTools.trim(data);
+		if (trimmed.length < 5 || trimmed.charAt(0) != "[" || trimmed.charAt(trimmed.length - 1) != "]") {
+			throw new ParseError(lineNo, "Invalid vector expression");
+		}
+		final body = trimmed.substr(1, trimmed.length - 2);
+		var parts = new Array<String>();
+		var start = 0;
+		var parenLevel = 0;
+		var bracketLevel = 0;
+		for (i in 0...body.length) {
+			final ch = body.charAt(i);
+			switch (ch) {
+				case "(":
+					parenLevel++;
+				case ")":
+					parenLevel--;
+				case "[":
+					bracketLevel++;
+				case "]":
+					bracketLevel--;
+				case ",":
+					if (parenLevel == 0 && bracketLevel == 0) {
+						parts.push(body.substring(start, i));
+						start = i + 1;
+					}
+				default:
+			}
+		}
+		parts.push(body.substring(start));
+		if (parts.length != 2) {
+			throw new ParseError(lineNo, "Vector expression must contain exactly two components");
+		}
+		return parts;
 	}
 
 	static function getTokenType(data:String):Token {
@@ -724,6 +774,9 @@ class Parser {
 			if (Std.isOfType(position, ScriptValue)) {
 				event.position.script = position;
 				event.position.scripted = true;
+			} else if (Std.isOfType(position, ScriptVectorValue)) {
+				event.position.scriptVector = position;
+				event.position.vectorScripted = true;
 			} else {
 				event.position.constValueVec = position;
 			}

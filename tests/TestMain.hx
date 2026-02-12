@@ -51,6 +51,8 @@ class TestMain {
 		failures += run("dev example emits expected first incremental outcome", testDevExampleOutcome);
 		failures += run("particle governor: bullet moves expected distance over script lifetime", testBulletMotionOverScriptLifetime);
 		failures += run("particle governor: acceleration affects traveled distance", testBulletMotionWithAcceleration);
+		failures += run("vector expressions evaluate repeatCount-driven offsets", testVectorExpressionRepeatCountOffsets);
+		failures += run("vector expressions with rand() are deterministic by seed", testVectorExpressionRandDeterminism);
 		failures += run("SoA handle lifecycle maps and releases bullets correctly", testSoaHandleLifecycle);
 		#if barrage_profile
 		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
@@ -532,6 +534,42 @@ class TestMain {
 		assertFloatEquals(20, bullet.posX, 0.5, "Bullet should travel ~20 units in 2 seconds under +10 accel.");
 	}
 
+	static function testVectorExpressionRepeatCountOffsets():Void {
+		final source =
+			"barrage called vector_repeat\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 0\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source from relative position [(repeatCount*10), (1 + repeatCount)] in absolute direction 0\n"
+			+ "\t\twait 1 frames\n"
+			+ "\t\trepeat 3 times\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final running = barrage.run(emitter);
+		running.start();
+		running.update(1 / 60);
+		running.update(1 / 60);
+		running.update(1 / 60);
+
+		assertIntEquals(3, emitter.emitCount, "Expected three emits from repeat 3.");
+		assertFloatEquals(0, emitter.xs[0], 1e-6, "Cycle 0 vector X should be 0.");
+		assertFloatEquals(1, emitter.ys[0], 1e-6, "Cycle 0 vector Y should be 1.");
+		assertFloatEquals(10, emitter.xs[1], 1e-6, "Cycle 1 vector X should be 10.");
+		assertFloatEquals(2, emitter.ys[1], 1e-6, "Cycle 1 vector Y should be 2.");
+		assertFloatEquals(20, emitter.xs[2], 1e-6, "Cycle 2 vector X should be 20.");
+		assertFloatEquals(3, emitter.ys[2], 1e-6, "Cycle 2 vector Y should be 3.");
+	}
+
+	static function testVectorExpressionRandDeterminism():Void {
+		final first = collectScriptVectorPositions(new SeededRng(101));
+		final second = collectScriptVectorPositions(new SeededRng(101));
+		assertIntEquals(first.length, second.length, "Vector sample lengths should match.");
+		for (i in 0...first.length) {
+			assertFloatEquals(first[i][0], second[i][0], 1e-9, "Vector X sequence should match for equal seed.");
+			assertFloatEquals(first[i][1], second[i][1], 1e-9, "Vector Y sequence should match for equal seed.");
+		}
+	}
+
 	static function testSoaHandleLifecycle():Void {
 		final source =
 			"barrage called soa_handles\n"
@@ -791,6 +829,22 @@ class TestMain {
 		running.update(1 / 60);
 		running.update(1 / 60);
 		return emitter.speeds;
+	}
+
+	static function collectScriptVectorPositions(rng:SeededRng):Array<Array<Float>> {
+		final source =
+			"barrage called scripted_vector_rng\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 0\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source from relative position [(rand()*10), (rand()*20)] in absolute direction 0\n"
+			+ "\t\trepeat 4 times\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final running = barrage.run(emitter, 1.0, 1.0, rng);
+		running.start();
+		running.update(1 / 60);
+		return [for (i in 0...emitter.emitCount) [emitter.xs[i], emitter.ys[i]]];
 	}
 
 	static function assertFalse(value:Bool, message:String):Void {
