@@ -2,9 +2,18 @@ package barrage.instancing;
 
 import barrage.Barrage;
 import barrage.data.BulletDef;
+import barrage.data.events.ActionEventDef;
+import barrage.data.events.ActionReferenceEventDef;
+import barrage.data.events.DieEventDef;
 import barrage.data.events.FireEventDef;
+import barrage.data.events.PropertySetDef;
+import barrage.data.events.PropertyTweenDef;
+import barrage.data.events.WaitDef;
+import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
 import barrage.ir.CompiledBarrage;
+import barrage.ir.Instruction;
+import barrage.ir.Opcode;
 import barrage.data.targets.TargetSelector;
 import barrage.instancing.events.FireEvent;
 import barrage.instancing.ActionStateStore.ActionHandle;
@@ -291,9 +300,9 @@ class RunningBarrage {
 		while (runEvents < eventsPerCycle) {
 			final instr = action.getInstruction(runEvents++);
 			actionStore.runEvents[handle] = runEvents;
-			action.runVmInstructionPublic(this, instr, delta);
+			runVmInstruction(action, instr, delta);
 			processedThisTick++;
-			if (action.isWaitOpcodePublic(instr.opcode)) {
+			if (isWaitOpcode(instr.opcode)) {
 				break;
 			}
 			if (action.isVmUnrolled() && processedThisTick >= action.getVmCycleInstructionCount()) {
@@ -327,6 +336,205 @@ class RunningBarrage {
 				actionStore.runEvents[handle] = 0;
 			}
 		}
+	}
+
+	inline function isWaitOpcode(opcode:Opcode):Bool {
+		return switch (opcode) {
+			case WAIT | WAIT_SECONDS_CONST | WAIT_FRAMES_CONST:
+				true;
+			default:
+				false;
+		}
+	}
+
+	inline function runVmInstruction(action:RunningAction, instr:Instruction, delta:Float):Void {
+		switch (instr.opcode) {
+			case WAIT:
+				vmWait(action, cast action.def.events[instr.eventIndex]);
+			case WAIT_SECONDS_CONST:
+				action.sleepTime += instr.immF0;
+			case WAIT_FRAMES_CONST:
+				action.sleepTime += instr.immF0;
+			case FIRE:
+				vmFire(action, cast action.def.events[instr.eventIndex], delta);
+			case FIRE_CONST:
+				vmFireConst(action, cast action.def.events[instr.eventIndex], delta);
+			case PROPERTY_SET:
+				vmPropertySet(action, cast action.def.events[instr.eventIndex]);
+			case PROPERTY_SET_SPEED_CONST:
+				vmPropertySetSpeedConst(action, instr.immF0, instr.immI0 != 0);
+			case PROPERTY_SET_DIRECTION_CONST:
+				vmPropertySetDirectionConst(action, instr.immF0, instr.immI0 != 0);
+			case PROPERTY_SET_ACCEL_CONST:
+				vmPropertySetAccelConst(action, instr.immF0, instr.immI0 != 0);
+			case PROPERTY_TWEEN:
+				vmPropertyTween(action, cast action.def.events[instr.eventIndex], delta);
+			case PROPERTY_TWEEN_SPEED_CONST:
+				vmPropertyTweenSpeedConst(action, instr.immF0, instr.immF1, instr.immI0 != 0, delta);
+			case PROPERTY_TWEEN_DIRECTION_CONST:
+				vmPropertyTweenDirectionConst(action, instr.immF0, instr.immF1, instr.immI0 != 0, delta);
+			case PROPERTY_TWEEN_ACCEL_CONST:
+				vmPropertyTweenAccelConst(action, instr.immF0, instr.immF1, instr.immI0 != 0, delta);
+			case ACTION:
+				vmAction(action, cast action.def.events[instr.eventIndex], delta);
+			case ACTION_REF:
+				vmActionRef(action, cast action.def.events[instr.eventIndex], delta);
+			case DIE:
+				vmDie(action, cast action.def.events[instr.eventIndex]);
+		}
+	}
+
+	inline function vmWait(action:RunningAction, waitDef:WaitDef):Void {
+		var wait:Float;
+		if (waitDef.scripted) {
+			wait = waitDef.waitTimeScript.eval(scriptContext, action.enterSerial, action.cycleCount, tickCount);
+		} else {
+			wait = waitDef.waitTime;
+		}
+		switch (waitDef.durationType) {
+			case DurationType.SECONDS:
+				action.sleepTime += wait;
+			case DurationType.FRAMES:
+				action.sleepTime += wait * (1 / owner.frameRate);
+		}
+	}
+
+	inline function vmFire(action:RunningAction, fireEventDef:FireEventDef, delta:Float):Void {
+		final bulletID = fireEventDef.bulletID;
+		action.currentBullet = fireDef(action, fireEventDef, bulletID, delta);
+		if (bulletID != -1) {
+			final bd = owner.bullets[bulletID];
+			if (bd.action != -1) {
+				runActionByID(action, bd.action, action.currentBullet);
+			}
+		}
+	}
+
+	inline function vmFireConst(action:RunningAction, fireEventDef:FireEventDef, delta:Float):Void {
+		final bulletID = fireEventDef.bulletID;
+		action.currentBullet = fireDefConst(action, fireEventDef, bulletID, delta);
+		if (bulletID != -1) {
+			final bd = owner.bullets[bulletID];
+			if (bd.action != -1) {
+				runActionByID(action, bd.action, action.currentBullet);
+			}
+		}
+	}
+
+	inline function vmPropertySet(action:RunningAction, d:PropertySetDef):Void {
+		final bullet = action.triggeringBullet;
+		if (d.speed != null) {
+			if (d.speed.modifier.has(RELATIVE)) {
+				setBulletSpeed(bullet, bullet.speed + d.speed.get(this, action));
+			} else {
+				setBulletSpeed(bullet, d.speed.get(this, action));
+			}
+		}
+		if (d.direction != null) {
+			var ang:Float = 0;
+			if (d.direction.modifier.has(AIMED)) {
+				ang = getAngleToTarget(bullet.posX, bullet.posY, action, d.direction.target);
+			} else {
+				ang = d.direction.get(this, action);
+			}
+			if (d.relative) {
+				setBulletAngle(bullet, bullet.angle + ang);
+			} else {
+				setBulletAngle(bullet, ang);
+			}
+		}
+		if (d.acceleration != null) {
+			final accel = d.acceleration.get(this, action);
+			if (d.relative) {
+				setBulletAcceleration(bullet, bullet.acceleration + accel);
+			} else {
+				setBulletAcceleration(bullet, accel);
+			}
+		}
+	}
+
+	inline function vmPropertySetSpeedConst(action:RunningAction, v:Float, relative:Bool):Void {
+		final bullet = action.triggeringBullet;
+		setBulletSpeed(bullet, relative ? bullet.speed + v : v);
+	}
+
+	inline function vmPropertySetDirectionConst(action:RunningAction, v:Float, relative:Bool):Void {
+		final bullet = action.triggeringBullet;
+		setBulletAngle(bullet, relative ? bullet.angle + v : v);
+	}
+
+	inline function vmPropertySetAccelConst(action:RunningAction, v:Float, relative:Bool):Void {
+		final bullet = action.triggeringBullet;
+		setBulletAcceleration(bullet, relative ? bullet.acceleration + v : v);
+	}
+
+	inline function vmPropertyTween(action:RunningAction, d:PropertyTweenDef, delta:Float):Void {
+		var tweenTime:Float;
+		if (d.scripted) {
+			tweenTime = d.tweenTimeScript.eval(scriptContext, action.enterSerial, action.cycleCount, tickCount);
+		} else {
+			tweenTime = d.tweenTime;
+		}
+		if (d.durationType == DurationType.FRAMES) {
+			tweenTime *= (1 / owner.frameRate);
+		}
+		final bullet = action.triggeringBullet;
+		if (d.speed != null) {
+			var v = d.speed.get(this, action);
+			if (d.relative) v = bullet.speed + v;
+			retargetSpeed(bullet, v, tweenTime, delta);
+		}
+		if (d.direction != null) {
+			var ang:Float = 0;
+			if (d.direction.modifier.has(AIMED)) {
+				final current = bullet.angle;
+				ang = getAngleToTarget(bullet.posX, bullet.posY, action, d.direction.target);
+				while (ang - current > 180) ang -= 360;
+				while (ang - current < -180) ang += 360;
+			} else {
+				ang = d.direction.get(this, action);
+			}
+			if (d.relative) ang = bullet.angle + ang;
+			retargetAngle(bullet, ang, tweenTime, delta);
+		}
+		if (d.acceleration != null) {
+			var accel = d.acceleration.get(this, action);
+			if (d.relative) accel = bullet.acceleration + accel;
+			retargetAcceleration(bullet, accel, tweenTime, delta);
+		}
+	}
+
+	inline function vmPropertyTweenSpeedConst(action:RunningAction, value:Float, tweenTime:Float, relative:Bool, delta:Float):Void {
+		final bullet = action.triggeringBullet;
+		var v = value;
+		if (relative) v = bullet.speed + v;
+		retargetSpeed(bullet, v, tweenTime, delta);
+	}
+
+	inline function vmPropertyTweenDirectionConst(action:RunningAction, value:Float, tweenTime:Float, relative:Bool, delta:Float):Void {
+		final bullet = action.triggeringBullet;
+		var ang = value;
+		if (relative) ang = bullet.angle + ang;
+		retargetAngle(bullet, ang, tweenTime, delta);
+	}
+
+	inline function vmPropertyTweenAccelConst(action:RunningAction, value:Float, tweenTime:Float, relative:Bool, delta:Float):Void {
+		final bullet = action.triggeringBullet;
+		var accel = value;
+		if (relative) accel = bullet.acceleration + accel;
+		retargetAcceleration(bullet, accel, tweenTime, delta);
+	}
+
+	inline function vmAction(action:RunningAction, d:ActionEventDef, delta:Float):Void {
+		runActionByID(action, d.actionID, action.triggeringBullet, null, delta);
+	}
+
+	inline function vmActionRef(action:RunningAction, d:ActionReferenceEventDef, delta:Float):Void {
+		runActionByID(action, d.actionID, action.triggeringBullet, d.overrides, delta);
+	}
+
+	inline function vmDie(action:RunningAction, d:DieEventDef):Void {
+		killBullet(action.triggeringBullet);
 	}
 
 	public inline function stopAction(action:RunningAction) {
