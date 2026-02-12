@@ -2,6 +2,7 @@ package barrage.script;
 
 import hscript.Expr;
 import hscript.Interp;
+import haxe.Timer;
 
 private enum EvalTier {
 	ALWAYS;
@@ -31,7 +32,7 @@ class ScriptValue {
 		this.constant = if (nativeExpr != null && nativeExpr.isConstant()) nativeExpr.evalConstant() else null;
 	}
 
-	public function eval(interp:Interp, actionSerial:Int, cycle:Int, tick:Int):Float {
+	public function eval(interp:Interp, ctx:ScriptContext, actionSerial:Int, cycle:Int, tick:Int):Float {
 		if (constant != null) {
 			return constant;
 		}
@@ -39,7 +40,16 @@ class ScriptValue {
 			return cachedValue;
 		}
 
-		final out = if (nativeExpr != null) nativeExpr.eval(interp) else interp.execute(expr);
+		final t0 = Timer.stamp();
+		final out = if (nativeExpr != null) {
+			ctx.profile.nativeScriptEvals++;
+			nativeExpr.eval(interp, ctx);
+		} else {
+			ctx.profile.fallbackScriptEvals++;
+			ctx.syncToInterp(interp);
+			interp.execute(expr);
+		}
+		ctx.profile.scriptEvalSeconds += (Timer.stamp() - t0);
 		hasCached = true;
 		cachedValue = out;
 		cachedActionSerial = actionSerial;

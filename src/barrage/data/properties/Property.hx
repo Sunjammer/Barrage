@@ -54,7 +54,7 @@ class Property {
 		if (scripted) {
 			final serial = action == null ? -1 : action.enterSerial;
 			final cycle = action == null ? 0 : action.cycleCount;
-			return script.eval(runningBarrage.owner.executor, serial, cycle, runningBarrage.tickCount);
+			return script.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, serial, cycle, runningBarrage.tickCount);
 		} else {
 			// trace("Value: " + constValue);
 			return constValue;

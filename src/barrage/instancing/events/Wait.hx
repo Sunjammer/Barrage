@@ -17,7 +17,8 @@ class Wait implements ITriggerableEvent {
 	public inline function trigger(runningAction:RunningAction, runningBarrage:RunningBarrage, delta:Float):Void {
 		var sleepTimeNum:Float;
 		if (def.scripted) {
-			sleepTimeNum = def.waitTimeScript.eval(runningBarrage.owner.executor, runningAction.enterSerial, runningAction.cycleCount, runningBarrage.tickCount);
+			sleepTimeNum = def.waitTimeScript.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, runningAction.enterSerial,
+				runningAction.cycleCount, runningBarrage.tickCount);
 		} else {
 			sleepTimeNum = def.waitTime;
 		}

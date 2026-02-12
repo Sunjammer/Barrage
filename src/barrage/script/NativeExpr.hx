@@ -22,22 +22,19 @@ class NativeExpr {
 		this.stack = [];
 	}
 
-	public function eval(interp:Interp):Float {
+	public function eval(interp:Interp, ctx:ScriptContext):Float {
 		var top = 0;
 		for (t in rpn) {
 			switch (t) {
 				case TNumber(v):
 					stack[top++] = v;
 				case TIdentifier(name):
-					final v:Dynamic = interp.variables.get(name);
+					final v = ctx.getVar(name);
 					if (v == null)
 						throw "Unknown variable: " + name;
-					stack[top++] = toFloat(v);
+					stack[top++] = v;
 				case TRand:
-					final fn:Dynamic = interp.variables.get("rand");
-					if (fn == null)
-						throw "rand() is not defined";
-					stack[top++] = fn();
+					stack[top++] = ctx.rand();
 				case TAdd:
 					final b = stack[--top];
 					final a = stack[--top];
@@ -118,13 +115,6 @@ class NativeExpr {
 		} catch (_:Dynamic) {
 			return null;
 		}
-	}
-
-	static inline function toFloat(v:Dynamic):Float {
-		if (Std.isOfType(v, Float)) return cast v;
-		if (Std.isOfType(v, Int)) return cast v;
-		if (Std.isOfType(v, Bool)) return cast(v, Bool) ? 1.0 : 0.0;
-		return Std.parseFloat(Std.string(v));
 	}
 
 	static function stripOuterParens(raw:String):String {

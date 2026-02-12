@@ -109,11 +109,10 @@ class RunningAction {
 			sleepTime -= delta;
 			if (sleepTime <= 0) {
 				// delta += Math.abs(sleepTime);
-				final vars = runningBarrage.owner.executor.variables;
-				vars.set("actiontime", actionTime);
-				vars.set("actionTime", actionTime);
-				vars.set("repeatcount", completedCycles);
-				vars.set("repeatCount", completedCycles);
+				runningBarrage.scriptContext.setVar("actiontime", actionTime);
+				runningBarrage.scriptContext.setVar("actionTime", actionTime);
+				runningBarrage.scriptContext.setVar("repeatcount", completedCycles);
+				runningBarrage.scriptContext.setVar("repeatCount", completedCycles);
 				if (useVmExecution && compiledAction != null) {
 					var processedThisTick = 0;
 					while (runEvents < eventsPerCycle) {
@@ -179,7 +178,7 @@ class RunningAction {
 	inline function vmWait(runningBarrage:RunningBarrage, waitDef:WaitDef):Void {
 		var wait:Float;
 		if (waitDef.scripted) {
-			wait = waitDef.waitTimeScript.eval(runningBarrage.owner.executor, enterSerial, cycleCount, runningBarrage.tickCount);
+			wait = waitDef.waitTimeScript.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, enterSerial, cycleCount, runningBarrage.tickCount);
 		} else {
 			wait = waitDef.waitTime;
 		}
@@ -237,7 +236,7 @@ class RunningAction {
 	inline function vmPropertyTween(runningBarrage:RunningBarrage, d:PropertyTweenDef, delta:Float):Void {
 		var tweenTime:Float;
 		if (d.scripted) {
-			tweenTime = d.tweenTimeScript.eval(runningBarrage.owner.executor, enterSerial, cycleCount, runningBarrage.tickCount);
+			tweenTime = d.tweenTimeScript.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, enterSerial, cycleCount, runningBarrage.tickCount);
 		} else {
 			tweenTime = d.tweenTime;
 		}
@@ -311,7 +310,7 @@ class RunningAction {
 			}
 		}
 		for (p in properties) {
-			barrage.owner.executor.variables.set(p.name, p.get(barrage, callingAction));
+			barrage.scriptContext.setVar(p.name, p.get(barrage, callingAction));
 		}
 		this.callingAction = callingAction;
 		this.barrage = barrage;
