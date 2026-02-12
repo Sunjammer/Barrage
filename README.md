@@ -95,6 +95,22 @@ A lightweight local script IDE with live canvas preview is available in `tools/i
 
 Build and run instructions: `tools/ide-web/README.md`
 
+Benchmark Targets
+========
+
+Run the existing test+benchmark harness in interpreter mode:
+
+	haxe test.hxml
+
+Build a native C++ benchmark/test binary (HXCPP):
+
+	haxelib install hxcpp
+	haxe benchmark-cpp.hxml
+
+Then run:
+
+	bin/cpp-benchmark/TestMain
+
 IR Compile + AOT Packaging
 ========
 

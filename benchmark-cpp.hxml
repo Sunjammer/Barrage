@@ -1,0 +1,6 @@
+--class-path src
+--class-path tests
+--main tests.TestMain
+-D analyzer-optimize
+-D HXCPP_M64
+--cpp bin/cpp-benchmark
