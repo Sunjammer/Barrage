@@ -13,11 +13,11 @@ import barrage.data.events.PropertyTweenDef;
 import barrage.data.events.WaitDef;
 import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
+import barrage.script.ScriptValue;
 import barrage.data.targets.TargetSelector;
 import barrage.parser.Parser.Block;
 import barrage.parser.Token;
 import haxe.ds.Vector.Vector;
-import hscript.Expr;
 
 @:allow(barrage.parser.Line)
 @:allow(barrage.parser.Block)
@@ -370,7 +370,7 @@ class Parser {
 	static private function buildValue(data:String, type:Token):Dynamic {
 		switch (type) {
 			case TScript:
-				return new hscript.Parser().parseString(data);
+				return new ScriptValue(data, new hscript.Parser().parseString(data));
 			case TConst_math:
 				var expr = new hscript.Parser().parseString(data);
 				return new hscript.Interp().execute(expr);
@@ -675,7 +675,7 @@ class Parser {
 				default:
 					event.speed.modifier.set(ABSOLUTE);
 			}
-			if (Std.isOfType(speed, Expr)) {
+			if (Std.isOfType(speed, ScriptValue)) {
 				event.speed.script = speed;
 				event.speed.scripted = true;
 			} else {
@@ -693,7 +693,7 @@ class Parser {
 				default:
 					event.acceleration.modifier.set(ABSOLUTE);
 			}
-			if (Std.isOfType(acceleration, Expr)) {
+			if (Std.isOfType(acceleration, ScriptValue)) {
 				event.acceleration.script = acceleration;
 				event.acceleration.scripted = true;
 			} else {
@@ -713,7 +713,7 @@ class Parser {
 				default:
 					event.position.modifier.set(ABSOLUTE);
 			}
-			if (Std.isOfType(position, Expr)) {
+			if (Std.isOfType(position, ScriptValue)) {
 				event.position.script = position;
 				event.position.scripted = true;
 			} else {
@@ -734,7 +734,7 @@ class Parser {
 					event.direction.modifier.set(AIMED);
 					event.direction.target = directionTarget == null ? PLAYER : directionTarget;
 			}
-			if (Std.isOfType(direction, Expr)) {
+			if (Std.isOfType(direction, ScriptValue)) {
 				event.direction.script = direction;
 				event.direction.scripted = true;
 			} else {

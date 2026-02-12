@@ -17,7 +17,7 @@ class PropertyTween implements ITriggerableEvent {
 	public inline function trigger(runningAction:RunningAction, runningBarrage:RunningBarrage, delta:Float):Void {
 		var tweenTimeNum:Float;
 		if (def.scripted) {
-			tweenTimeNum = runningBarrage.owner.executor.execute(def.tweenTimeScript);
+			tweenTimeNum = def.tweenTimeScript.eval(runningBarrage.owner.executor, runningAction.enterSerial, runningAction.cycleCount, runningBarrage.tickCount);
 		} else {
 			tweenTimeNum = def.tweenTime;
 		}
