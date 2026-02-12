@@ -14,6 +14,7 @@ import barrage.data.properties.Property;
 import barrage.ir.CompiledAction;
 import barrage.ir.Instruction;
 import barrage.ir.Opcode;
+import barrage.instancing.ActionStateStore.ActionHandle;
  #if barrage_legacy
 import barrage.instancing.events.ITriggerableEvent;
 import barrage.instancing.events.EventFactory;
@@ -25,19 +26,21 @@ class RunningAction {
 	#if barrage_legacy
 	public var events:Array<ITriggerableEvent>;
 	#end
-	public var sleepTime:Float;
-	public var currentBullet:IBarrageBullet;
-	public var triggeringBullet:IBarrageBullet;
-	public var prevAngle:Float;
-	public var prevSpeed:Float;
-	public var prevAccel:Float;
-	public var prevPositionX:Float;
-	public var prevPositionY:Float;
-	public var actionTime:Float;
-	public var prevDelta:Float;
-	public var enterSerial:Int;
+	public var sleepTime(get, set):Float;
+	public var currentBullet(get, set):IBarrageBullet;
+	public var triggeringBullet(get, set):IBarrageBullet;
+	public var prevAngle(get, set):Float;
+	public var prevSpeed(get, set):Float;
+	public var prevAccel(get, set):Float;
+	public var prevPositionX(get, set):Float;
+	public var prevPositionY(get, set):Float;
+	public var actionTime(get, set):Float;
+	public var prevDelta(get, set):Float;
+	public var enterSerial(get, set):Int;
 
 	var barrage:RunningBarrage;
+	final stateStore:ActionStateStore;
+	final stateHandle:ActionHandle;
 	var useVmExecution:Bool;
 	var compiledAction:Null<CompiledAction>;
 	var vmUnrolled:Bool;
@@ -45,15 +48,17 @@ class RunningAction {
 	var vmUnrolledCycles:Int;
 	var repeatCount:Int;
 	var endless:Bool;
-	var completedCycles:Int;
+	var completedCycles(get, set):Int;
 	var eventsPerCycle:Int;
-	var runEvents:Int;
+	var runEvents(get, set):Int;
 
-	public var callingAction:RunningAction;
+	public var callingAction(get, set):RunningAction;
 	public var properties:Array<Property>;
 
 	public function new(runningBarrage:RunningBarrage, def:ActionDef, useVmExecution:Bool = false) {
 		this.def = def;
+		this.stateStore = runningBarrage.getActionStore();
+		this.stateHandle = runningBarrage.allocActionState();
 		#if barrage_legacy
 		this.compiledAction = useVmExecution && runningBarrage.compiledProgram != null ? runningBarrage.compiledProgram.actions[def.id] : null;
 		this.useVmExecution = useVmExecution && this.compiledAction != null;
@@ -409,11 +414,124 @@ class RunningAction {
 
 	public inline function exit(barrage:RunningBarrage) {
 		currentBullet = null;
+		barrage.releaseActionState(stateHandle);
 	}
 
 	public var cycleCount(get, never):Int;
 
 	inline function get_cycleCount():Int {
 		return completedCycles;
+	}
+
+	inline function get_sleepTime():Float {
+		return stateStore.sleepTime[stateHandle];
+	}
+
+	inline function set_sleepTime(value:Float):Float {
+		return stateStore.sleepTime[stateHandle] = value;
+	}
+
+	inline function get_currentBullet():IBarrageBullet {
+		return stateStore.currentBullet[stateHandle];
+	}
+
+	inline function set_currentBullet(value:IBarrageBullet):IBarrageBullet {
+		return stateStore.currentBullet[stateHandle] = value;
+	}
+
+	inline function get_triggeringBullet():IBarrageBullet {
+		return stateStore.triggeringBullet[stateHandle];
+	}
+
+	inline function set_triggeringBullet(value:IBarrageBullet):IBarrageBullet {
+		return stateStore.triggeringBullet[stateHandle] = value;
+	}
+
+	inline function get_prevAngle():Float {
+		return stateStore.prevAngle[stateHandle];
+	}
+
+	inline function set_prevAngle(value:Float):Float {
+		return stateStore.prevAngle[stateHandle] = value;
+	}
+
+	inline function get_prevSpeed():Float {
+		return stateStore.prevSpeed[stateHandle];
+	}
+
+	inline function set_prevSpeed(value:Float):Float {
+		return stateStore.prevSpeed[stateHandle] = value;
+	}
+
+	inline function get_prevAccel():Float {
+		return stateStore.prevAccel[stateHandle];
+	}
+
+	inline function set_prevAccel(value:Float):Float {
+		return stateStore.prevAccel[stateHandle] = value;
+	}
+
+	inline function get_prevPositionX():Float {
+		return stateStore.prevPositionX[stateHandle];
+	}
+
+	inline function set_prevPositionX(value:Float):Float {
+		return stateStore.prevPositionX[stateHandle] = value;
+	}
+
+	inline function get_prevPositionY():Float {
+		return stateStore.prevPositionY[stateHandle];
+	}
+
+	inline function set_prevPositionY(value:Float):Float {
+		return stateStore.prevPositionY[stateHandle] = value;
+	}
+
+	inline function get_actionTime():Float {
+		return stateStore.actionTime[stateHandle];
+	}
+
+	inline function set_actionTime(value:Float):Float {
+		return stateStore.actionTime[stateHandle] = value;
+	}
+
+	inline function get_prevDelta():Float {
+		return stateStore.prevDelta[stateHandle];
+	}
+
+	inline function set_prevDelta(value:Float):Float {
+		return stateStore.prevDelta[stateHandle] = value;
+	}
+
+	inline function get_enterSerial():Int {
+		return stateStore.enterSerial[stateHandle];
+	}
+
+	inline function set_enterSerial(value:Int):Int {
+		return stateStore.enterSerial[stateHandle] = value;
+	}
+
+	inline function get_completedCycles():Int {
+		return stateStore.completedCycles[stateHandle];
+	}
+
+	inline function set_completedCycles(value:Int):Int {
+		return stateStore.completedCycles[stateHandle] = value;
+	}
+
+	inline function get_runEvents():Int {
+		return stateStore.runEvents[stateHandle];
+	}
+
+	inline function set_runEvents(value:Int):Int {
+		return stateStore.runEvents[stateHandle] = value;
+	}
+
+	inline function get_callingAction():RunningAction {
+		return stateStore.callingAction[stateHandle];
+	}
+
+	inline function set_callingAction(value:RunningAction):RunningAction {
+		return stateStore.callingAction[stateHandle] = value;
 	}
 }

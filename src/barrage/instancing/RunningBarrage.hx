@@ -7,6 +7,7 @@ import barrage.data.properties.Property;
 import barrage.ir.CompiledBarrage;
 import barrage.data.targets.TargetSelector;
 import barrage.instancing.events.FireEvent;
+import barrage.instancing.ActionStateStore.ActionHandle;
 import barrage.instancing.IOrigin;
 import barrage.instancing.SoaBulletStore.BulletHandle;
 import barrage.script.ScriptContext;
@@ -47,6 +48,7 @@ class RunningBarrage {
 	var spatialByType:Array<IntMap<Array<BulletHandle>>>;
 	var spatialTickByType:Array<Int>;
 	var spatialCellSize:Float = 128;
+	var actionStore:ActionStateStore;
 	var bulletStore:SoaBulletStore;
 	var tweenStore:SoaTweenStore;
 	var slotDifficulty:Int;
@@ -77,6 +79,7 @@ class RunningBarrage {
 		this.compiledProgram = useVmExecution ? owner.compile() : null;
 		activeActions = [];
 		bullets = [];
+		actionStore = new ActionStateStore();
 		bulletStore = new SoaBulletStore();
 		tweenStore = new SoaTweenStore();
 		bulletNameToId = new Map<String, Int>();
@@ -249,6 +252,18 @@ class RunningBarrage {
 		// trace("Stop action: "+action.def.name);
 	}
 
+	public inline function allocActionState():ActionHandle {
+		return actionStore.alloc();
+	}
+
+	public inline function releaseActionState(handle:ActionHandle):Void {
+		actionStore.release(handle);
+	}
+
+	public inline function getActionStore():ActionStateStore {
+		return actionStore;
+	}
+
 	public function dispose() {
 		while (activeActions.length > 0) {
 			stopAction(activeActions[0]);
@@ -257,6 +272,7 @@ class RunningBarrage {
 		bulletsByDef = [];
 		spatialByType = [];
 		spatialTickByType = [];
+		actionStore = new ActionStateStore();
 		bulletStore = new SoaBulletStore();
 		tweenStore = new SoaTweenStore();
 	}
