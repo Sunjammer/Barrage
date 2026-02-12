@@ -86,8 +86,20 @@ class Barrage {
 		final scriptMath = new ScriptMath(activeRng);
 		executor.variables.set("math", scriptMath);
 		executor.variables.set("Math", scriptMath);
+		// run() always defaults to VM execution.
+		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true, false);
+	}
+
+	#if barrage_legacy
+	public inline function runLegacy(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng):RunningBarrage {
+		final activeRng = rng == null ? new SeededRng(0) : rng;
+		executor.variables.set("rand", activeRng.nextFloat);
+		final scriptMath = new ScriptMath(activeRng);
+		executor.variables.set("math", scriptMath);
+		executor.variables.set("Math", scriptMath);
 		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false, false);
 	}
+	#end
 
 	public inline function runVm(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng,
 			strictNativeExpressions:Bool = true):RunningBarrage {

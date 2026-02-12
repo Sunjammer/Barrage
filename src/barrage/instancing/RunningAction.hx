@@ -13,13 +13,17 @@ import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
 import barrage.ir.CompiledAction;
 import barrage.ir.Opcode;
+ #if barrage_legacy
 import barrage.instancing.events.ITriggerableEvent;
-import barrage.instancing.RunningBarrage;
 import barrage.instancing.events.EventFactory;
+ #end
+import barrage.instancing.RunningBarrage;
 
 class RunningAction {
 	public var def:ActionDef;
+	#if barrage_legacy
 	public var events:Array<ITriggerableEvent>;
+	#end
 	public var sleepTime:Float;
 	public var currentBullet:IBarrageBullet;
 	public var triggeringBullet:IBarrageBullet;
@@ -49,8 +53,13 @@ class RunningAction {
 
 	public function new(runningBarrage:RunningBarrage, def:ActionDef, useVmExecution:Bool = false) {
 		this.def = def;
+		#if barrage_legacy
 		this.compiledAction = useVmExecution && runningBarrage.compiledProgram != null ? runningBarrage.compiledProgram.actions[def.id] : null;
 		this.useVmExecution = useVmExecution && this.compiledAction != null;
+		#else
+		this.compiledAction = runningBarrage.compiledProgram != null ? runningBarrage.compiledProgram.actions[def.id] : null;
+		this.useVmExecution = this.compiledAction != null;
+		#end
 		this.vmUnrolled = this.useVmExecution && this.compiledAction != null && this.compiledAction.unrolledCycles > 1;
 		this.vmCycleInstructionCount = this.compiledAction != null ? this.compiledAction.cycleInstructionCount : 0;
 		this.vmUnrolledCycles = this.compiledAction != null ? this.compiledAction.unrolledCycles : 1;
@@ -75,6 +84,7 @@ class RunningAction {
 			endless = false;
 		}
 		// #end
+		#if barrage_legacy
 		events = this.useVmExecution ? [] : new Array<ITriggerableEvent>();
 		if (!this.useVmExecution) {
 			for (i in 0...def.events.length) {
@@ -82,6 +92,9 @@ class RunningAction {
 			}
 		}
 		eventsPerCycle = events.length;
+		#else
+		eventsPerCycle = 0;
+		#end
 		if (this.useVmExecution && compiledAction != null) {
 			eventsPerCycle = compiledAction.instructions.length;
 		} else if (this.useVmExecution) {
@@ -101,10 +114,14 @@ class RunningAction {
 	}
 
 	public function update(runningBarrage:RunningBarrage, delta:Float):Void {
+		#if barrage_legacy
 		if (!useVmExecution && events.length == 0) {
 			runningBarrage.stopAction(this);
 			return;
 		} else {
+		#else
+		{
+		#end
 			actionTime += delta;
 			sleepTime -= delta;
 			if (sleepTime <= 0) {
@@ -113,7 +130,7 @@ class RunningAction {
 				runningBarrage.scriptContext.setVar("actionTime", actionTime);
 				runningBarrage.scriptContext.setVar("repeatcount", completedCycles);
 				runningBarrage.scriptContext.setVar("repeatCount", completedCycles);
-				if (useVmExecution && compiledAction != null) {
+				if (compiledAction != null) {
 					var processedThisTick = 0;
 					while (runEvents < eventsPerCycle) {
 						final instr = compiledAction.instructions[runEvents++];
@@ -135,7 +152,8 @@ class RunningAction {
 						}
 						return;
 					}
-				} else {
+				#if barrage_legacy
+				else {
 					while (runEvents < eventsPerCycle) {
 						var e = events[runEvents++];
 						runEvent(runningBarrage, e, delta);
@@ -144,6 +162,8 @@ class RunningAction {
 						}
 					}
 				}
+				#end
+				}
 				if (runEvents == eventsPerCycle && sleepTime <= 0) {
 					repeat(runningBarrage);
 				}
@@ -151,10 +171,12 @@ class RunningAction {
 		}
 	}
 
+	#if barrage_legacy
 	inline function runEvent(runningBarrage:RunningBarrage, e:ITriggerableEvent, delta:Float):Void {
 		e.hasRun = true;
 		e.trigger(this, runningBarrage, delta);
 	}
+	#end
 
 	inline function runVmInstruction(runningBarrage:RunningBarrage, opcode:Opcode, eventIndex:Int, delta:Float):Void {
 		switch (opcode) {

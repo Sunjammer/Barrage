@@ -56,10 +56,14 @@ class TestMain {
 		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
 		#end
 		failures += run("VM strict native mode rejects unsupported expressions", testVmStrictNativeExpressionMode);
+		#if barrage_legacy
 		failures += run("VM execution parity with legacy runtime", testVmParity);
 		failures += run("VM parity across all shipped examples", testVmParityExamples);
 		failures += run("benchmark VM vs legacy runtime", benchmarkVmVsLegacy);
 		failures += run("benchmark stress profiles", benchmarkStressProfiles);
+		#else
+		failures += run("benchmark VM throughput profiles", benchmarkVmThroughputProfiles);
+		#end
 
 		if (failures == 0) {
 			Sys.println("All tests passed.");
@@ -606,6 +610,7 @@ class TestMain {
 		relaxedRunner.start();
 	}
 
+	#if barrage_legacy
 	static function testVmParity():Void {
 		final source =
 			"barrage called vm_parity\n"
@@ -691,6 +696,20 @@ class TestMain {
 			assertTrue(ratio < p.maxSlowdown, "VM slowdown too high for " + p.name + " (ratio=" + ratio + ")");
 		}
 	}
+	#else
+	static function benchmarkVmThroughputProfiles():Void {
+		final profiles = [
+			{name: "exhaustive_stress_file", source: File.getContent("examples/exhaustive_stress.brg"), iterations: 20, steps: 720},
+			{name: "spawn_storm_dense", source: buildSpawnStormProfileSource(), iterations: 40, steps: 360},
+			{name: "scripted_churn", source: buildScriptedChurnProfileSource(), iterations: 30, steps: 480}
+		];
+		for (p in profiles) {
+			final vmTime = benchmark(p.source, true, p.iterations, p.steps);
+			Sys.println('PROFILE ${p.name} vm=${vmTime}s iterations=${p.iterations} steps=${p.steps}');
+			assertTrue(vmTime > 0, "VM benchmark timing must be positive for " + p.name);
+		}
+	}
+	#end
 
 	static function buildSpawnStormProfileSource():String {
 		return "barrage called spawn_storm_dense\n"
