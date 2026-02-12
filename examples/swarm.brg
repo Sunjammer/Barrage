@@ -3,7 +3,10 @@ barrage called swarm
 		do action
 			set speed to 0 over 0.7 seconds
 			wait 0.7 seconds
-			set direction to aimed over 0.2 seconds
+			do action
+				set direction to aimed over 0.1 seconds
+				wait 0.1 seconds
+				repeat forever
 			set speed to 800 over 2 seconds
 
 	bullet called seed
