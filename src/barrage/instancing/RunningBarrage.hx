@@ -3,6 +3,7 @@ package barrage.instancing;
 import barrage.Barrage;
 import barrage.data.BulletDef;
 import barrage.data.properties.Property;
+import barrage.data.targets.TargetSelector;
 import barrage.instancing.animation.Animator;
 import barrage.instancing.events.FireEvent;
 import barrage.instancing.IOrigin;
@@ -22,6 +23,7 @@ class RunningBarrage {
 	public var bullets:GenericStack<IBarrageBullet>;
 	public var speedScale:Float;
 	public var accelScale:Float;
+	public var rng:IRng;
 
 	static var basePositionVec:Vec2 = {x: 0, y: 0};
 
@@ -30,9 +32,10 @@ class RunningBarrage {
 
 	public var emitter:IBulletEmitter;
 
-	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0) {
+	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng) {
 		this.speedScale = speedScale;
 		this.accelScale = accelScale;
+		this.rng = rng;
 		this.emitter = emitter;
 		this.owner = owner;
 		activeActions = [];
@@ -65,9 +68,10 @@ class RunningBarrage {
 
 		owner.executor.variables.set("barragetime", time);
 
-		if (activeActions.length == 0 || bullets.isEmpty()) {
+		if (activeActions.length == 0) {
 			stop();
-			onComplete(this);
+			if (onComplete != null)
+				onComplete(this);
 		} else {
 			var i = activeActions.length;
 			while (i-- > 0) {
@@ -137,8 +141,6 @@ class RunningBarrage {
 		emitter = null;
 	}
 
-	static var tempVec:Vec2 = {x: 0, y: 0};
-
 	function applyProperty(origin:Vec2, base:Float, prev:Float, prop:Property, runningBarrage:RunningBarrage, runningAction:RunningAction):Float {
 		var other = prop.get(runningBarrage, runningAction);
 		if (prop.modifier.has(INCREMENTAL)) {
@@ -146,7 +148,7 @@ class RunningBarrage {
 		} else if (prop.modifier.has(RELATIVE)) {
 			return base + other;
 		} else if (prop.modifier.has(AIMED)) {
-			return emitter.getAngleToPlayer(origin.x, origin.y) + other;
+			return getAngleToTarget(origin.x, origin.y, runningAction, prop.target) + other;
 		} else if (prop.modifier.has(RANDOM)) {
 			return runningBarrage.randomAngle() + other;
 		} else {
@@ -154,8 +156,71 @@ class RunningBarrage {
 		}
 	}
 
+	function resolveTargetSelector(action:RunningAction, selector:TargetSelector):TargetSelector {
+		return switch (selector) {
+			case TARGET_ALIAS(name):
+				if (owner.targets.exists(name))
+					resolveTargetSelector(action, owner.targets.get(name));
+				else
+					PLAYER;
+			default:
+				selector;
+		}
+	}
+
+	function resolveTargetOrigin(action:RunningAction, selector:TargetSelector):IOrigin {
+		final resolved = resolveTargetSelector(action, selector);
+		return switch (resolved) {
+			case PLAYER:
+				emitter;
+			case PARENT:
+				action.triggeringBullet != null ? action.triggeringBullet : getOrigin(action);
+			case SELF:
+				action.currentBullet != null ? action.currentBullet : (action.triggeringBullet != null ? action.triggeringBullet : getOrigin(action));
+			case NEAREST_BULLET_TYPE(typeName):
+				findNearestBulletByType(typeName, action);
+			case TARGET_ALIAS(_):
+				emitter;
+		}
+	}
+
+	function findNearestBulletByType(typeName:String, action:RunningAction):IOrigin {
+		final origin = getOrigin(action);
+		final targetType = typeName.toLowerCase();
+		var nearest:IBarrageBullet = null;
+		var bestDist2 = Math.POSITIVE_INFINITY;
+		for (bullet in bullets) {
+			if (!bullet.active || bullet.id < 0 || bullet.id >= owner.bullets.length)
+				continue;
+			final def = owner.bullets[bullet.id];
+			if (def == null || def.name.toLowerCase() != targetType)
+				continue;
+			final dx = bullet.posX - origin.posX;
+			final dy = bullet.posY - origin.posY;
+			final dist2 = dx * dx + dy * dy;
+			if (dist2 < bestDist2) {
+				bestDist2 = dist2;
+				nearest = bullet;
+			}
+		}
+		return nearest != null ? nearest : emitter;
+	}
+
+	public function getAngleToTarget(originX:Float, originY:Float, action:RunningAction, selector:TargetSelector):Float {
+		final resolved = resolveTargetSelector(action, selector);
+		if (resolved == PLAYER) {
+			return emitter.getAngleToPlayer(originX, originY);
+		}
+		final target = resolveTargetOrigin(action, resolved);
+		final dx = target.posX - originX;
+		final dy = target.posY - originY;
+		if (dx == 0 && dy == 0)
+			return 0;
+		return Math.atan2(dy, dx) * 180 / Math.PI;
+	}
+
 	public function randomAngle():Float {
-		return Math.random() * 360;
+		return rng.nextFloat() * 360;
 	}
 
 	inline function getOrigin(action:RunningAction):IOrigin {
@@ -223,6 +288,7 @@ class RunningBarrage {
 
 		var spd = baseSpeed * speedScale;
 		lastBulletFired = emitter.emit(action.prevPositionX, action.prevPositionY, baseDirection, spd, baseAccel * accelScale, delta);
+		lastBulletFired.id = bulletID;
 		lastBulletFired.speed = spd;
 		lastBulletFired.angle = baseDirection;
 		bullets.add(lastBulletFired);

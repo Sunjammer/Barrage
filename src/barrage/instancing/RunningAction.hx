@@ -3,9 +3,9 @@ package barrage.instancing;
 import barrage.data.ActionDef;
 import barrage.data.EventDef.EventType;
 import barrage.data.properties.Property;
-import barrage.instancing.events.EventFactory;
 import barrage.instancing.events.ITriggerableEvent;
 import barrage.instancing.RunningBarrage;
+import barrage.instancing.events.EventFactory;
 
 class RunningAction {
 	public var def:ActionDef;
@@ -24,11 +24,9 @@ class RunningAction {
 	var barrage:RunningBarrage;
 	var repeatCount:Int;
 	var endless:Bool;
-	var repeatNo:Int;
-	var cycleCount:Int;
+	var completedCycles:Int;
 	var eventsPerCycle:Int;
 	var runEvents:Int;
-	var currentEventIndex:Int;
 
 	public var callingAction:RunningAction;
 	public var properties:Array<Property>;
@@ -46,31 +44,33 @@ class RunningAction {
 		// #if debug
 		// var repeatCount = def.events.length;
 		// #else
-		repeatCount = cast def.repeatCount.get(runningBarrage, this);
+		repeatCount = Std.int(def.repeatCount.get(runningBarrage, this));
+		if (repeatCount < 0)
+			repeatCount = 0;
 		endless = def.endless;
 		// #end
 		events = new Array<ITriggerableEvent>();
-		var idx:Int = 0;
 		for (i in 0...def.events.length) {
 			events.push(EventFactory.create(def.events[i]));
 		}
 		eventsPerCycle = events.length;
 		runEvents = 0;
-		cycleCount = 1;
+		completedCycles = 0;
 	}
 
-	function repeat(runningBarrage:RunningBarrage){
-		if(!endless && cycleCount > repeatCount){
+	function repeat(runningBarrage:RunningBarrage):Void {
+		completedCycles++;
+		if (!endless && completedCycles >= repeatCount) {
 			runningBarrage.stopAction(this);
 			return;
 		}
 		runEvents = 0;
-		cycleCount++;
 	}
 
-	public function update(runningBarrage:RunningBarrage, delta:Float) {
+	public function update(runningBarrage:RunningBarrage, delta:Float):Void {
 		if (events.length == 0) {
 			runningBarrage.stopAction(this);
+			return;
 		} else {
 			actionTime += delta;
 			sleepTime -= delta;
@@ -84,16 +84,16 @@ class RunningAction {
 						break;
 					}
 				}
-				if(runEvents == eventsPerCycle){
+				if (runEvents == eventsPerCycle && sleepTime <= 0) {
 					repeat(runningBarrage);
 				}
 			}
 		}
 	}
 
-	inline function runEvent(runningBarrage:RunningBarrage, e:ITriggerableEvent, delta:Float) {
+	inline function runEvent(runningBarrage:RunningBarrage, e:ITriggerableEvent, delta:Float):Void {
 		e.hasRun = true;
-		runningBarrage.owner.executor.variables.set("repeatcount", repeatNo);
+		runningBarrage.owner.executor.variables.set("repeatcount", completedCycles);
 		e.trigger(this, runningBarrage, delta);
 	}
 
@@ -106,10 +106,6 @@ class RunningAction {
 			return callingAction.getProperty(name);
 		}
 		return null;
-	}
-
-	function pollProp(name:String):Float {
-		return getProperty(name).get(barrage, this);
 	}
 
 	public inline function enter(callingAction:RunningAction, barrage:RunningBarrage, ?overrides:Array<Property>) {
