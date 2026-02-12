@@ -244,15 +244,12 @@ class RunningAction {
 			tweenTime *= (1 / runningBarrage.owner.frameRate);
 		}
 		final bullet = triggeringBullet;
-		final animator = runningBarrage.getAnimator(bullet);
 		if (d.speed != null) {
-			final anim = animator.getSpeed();
 			var v = d.speed.get(runningBarrage, this);
 			if (d.relative) v = bullet.speed + v;
-			anim.retarget(bullet.speed, v, tweenTime, delta);
+			runningBarrage.retargetSpeed(bullet, v, tweenTime, delta);
 		}
 		if (d.direction != null) {
-			final anim = animator.getAngle();
 			var ang:Float = 0;
 			if (d.direction.modifier.has(AIMED)) {
 				final current = bullet.angle;
@@ -263,13 +260,12 @@ class RunningAction {
 				ang = d.direction.get(runningBarrage, this);
 			}
 			if (d.relative) ang = bullet.angle + ang;
-			anim.retarget(bullet.angle, ang, tweenTime, delta);
+			runningBarrage.retargetAngle(bullet, ang, tweenTime, delta);
 		}
 		if (d.acceleration != null) {
-			final anim = animator.getAcceleration();
 			var accel = d.acceleration.get(runningBarrage, this);
 			if (d.relative) accel = bullet.acceleration + accel;
-			anim.retarget(bullet.acceleration, accel, tweenTime, delta);
+			runningBarrage.retargetAcceleration(bullet, accel, tweenTime, delta);
 		}
 	}
 

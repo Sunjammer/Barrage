@@ -6,14 +6,12 @@ import barrage.data.events.FireEventDef;
 import barrage.data.properties.Property;
 import barrage.ir.CompiledBarrage;
 import barrage.data.targets.TargetSelector;
-import barrage.instancing.animation.Animator;
 import barrage.instancing.events.FireEvent;
 import barrage.instancing.IOrigin;
 import barrage.instancing.SoaBulletStore.BulletHandle;
 import barrage.script.ScriptContext;
 import haxe.Timer;
 import haxe.ds.IntMap;
-import haxe.ds.ObjectMap;
 
 typedef Vec2 = {x:Float, y:Float}
 
@@ -25,7 +23,6 @@ class RunningBarrage {
 	public var time:Float = 0;
 	public var onComplete:RunningBarrage->Void;
 	public var lastBulletFired:IBarrageBullet;
-	public var animators:Array<Animator>;
 	public var bullets:Array<BulletHandle>;
 	public var speedScale:Float;
 	public var accelScale:Float;
@@ -34,6 +31,7 @@ class RunningBarrage {
 	public var profilingEnabled:Bool = false;
 	public var scriptContext:ScriptContext;
 	public var useVmExecution:Bool;
+	public var strictNativeExpressions:Bool;
 	public var compiledProgram:Null<CompiledBarrage>;
 	public var tickCount:Int = 0;
 
@@ -41,31 +39,32 @@ class RunningBarrage {
 
 	var started:Bool;
 	var lastDelta:Float = 0;
-	var animatorByTarget:ObjectMap<IBarrageBullet, Animator>;
 	var bulletNameToId:Map<String, Int>;
 	var bulletsByDef:Array<Array<BulletHandle>>;
 	var spatialByType:Array<IntMap<Array<BulletHandle>>>;
 	var spatialTickByType:Array<Int>;
 	var spatialCellSize:Float = 128;
 	var bulletStore:SoaBulletStore;
+	var tweenStore:SoaTweenStore;
 
 	public var emitter:IBulletEmitter;
 
-	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng, useVmExecution:Bool = false) {
+	public function new(emitter:IBulletEmitter, owner:Barrage, speedScale:Float = 1.0, accelScale:Float = 1.0, rng:IRng, useVmExecution:Bool = false,
+			strictNativeExpressions:Bool = false) {
 		this.speedScale = speedScale;
 		this.accelScale = accelScale;
 		this.rng = rng;
 		this.useVmExecution = useVmExecution;
+		this.strictNativeExpressions = strictNativeExpressions;
 		this.emitter = emitter;
 		this.owner = owner;
 		this.profile = new RuntimeProfile();
-		this.scriptContext = new ScriptContext(rng, profile);
+		this.scriptContext = new ScriptContext(rng, profile, strictNativeExpressions);
 		this.compiledProgram = useVmExecution ? owner.compile() : null;
 		activeActions = [];
 		bullets = [];
 		bulletStore = new SoaBulletStore();
-		animators = [];
-		animatorByTarget = new ObjectMap<IBarrageBullet, Animator>();
+		tweenStore = new SoaTweenStore();
 		bulletNameToId = new Map<String, Int>();
 		bulletsByDef = [];
 		spatialByType = [];
@@ -109,7 +108,7 @@ class RunningBarrage {
 		if ((tickCount % 120) == 0) {
 			pruneBulletBuckets();
 		}
-		updateAnimators(delta);
+		updateTweens(delta);
 		if (profilingEnabled) {
 			profile.cleanupSeconds += Timer.stamp() - tCleanup;
 		}
@@ -174,28 +173,13 @@ class RunningBarrage {
 		}
 	}
 
-	inline function updateAnimators(delta:Float) {
-		var i = animators.length;
-		while (i-- > 0) {
-			final a = animators[i];
-			if (a.update(delta) == false) {
-				animatorByTarget.remove(a.target);
-				final last = animators.pop();
-				if (i < animators.length) {
-					animators[i] = last;
-				}
+	inline function updateTweens(delta:Float):Void {
+		for (handle in bullets) {
+			if (!bulletStore.isActive(handle)) {
+				continue;
 			}
+			tweenStore.updateHandle(handle, delta, bulletStore);
 		}
-	}
-
-	public function getAnimator(target:IBarrageBullet):Animator {
-		if (animatorByTarget.exists(target)) {
-			return animatorByTarget.get(target);
-		}
-		var a = new Animator(target);
-		animators.push(a);
-		animatorByTarget.set(target, a);
-		return a;
 	}
 
 	public inline function runActionByID(triggerAction:RunningAction, id:Int, ?triggerBullet:IBarrageBullet, ?overrides:Array<Property>,
@@ -232,11 +216,11 @@ class RunningBarrage {
 			stopAction(activeActions[0]);
 		}
 		emitter = null;
-		animatorByTarget = new ObjectMap<IBarrageBullet, Animator>();
 		bulletsByDef = [];
 		spatialByType = [];
 		spatialTickByType = [];
 		bulletStore = new SoaBulletStore();
+		tweenStore = new SoaTweenStore();
 	}
 
 	function applyProperty(origin:Vec2, base:Float, prev:Float, prop:Property, runningBarrage:RunningBarrage, runningAction:RunningAction):Float {
@@ -505,5 +489,29 @@ class RunningBarrage {
 
 	public function getHandleForBullet(bullet:IBarrageBullet):BulletHandle {
 		return bulletStore.getHandleForBullet(bullet);
+	}
+
+	public function retargetSpeed(bullet:IBarrageBullet, target:Float, duration:Float, initDelta:Float = 0):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle == BulletHandle.INVALID) {
+			return;
+		}
+		tweenStore.retargetSpeed(handle, bulletStore.getSpeed(handle), target, duration, initDelta);
+	}
+
+	public function retargetAngle(bullet:IBarrageBullet, target:Float, duration:Float, initDelta:Float = 0):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle == BulletHandle.INVALID) {
+			return;
+		}
+		tweenStore.retargetAngle(handle, bulletStore.getAngle(handle), target, duration, initDelta);
+	}
+
+	public function retargetAcceleration(bullet:IBarrageBullet, target:Float, duration:Float, initDelta:Float = 0):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle == BulletHandle.INVALID) {
+			return;
+		}
+		tweenStore.retargetAcceleration(handle, bulletStore.getAcceleration(handle), target, duration, initDelta);
 	}
 }

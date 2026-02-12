@@ -26,19 +26,16 @@ class PropertyTween implements ITriggerableEvent {
 			tweenTimeNum = (tweenTimeNum * 1 / runningBarrage.owner.frameRate);
 		}
 		var bullet = runningAction.triggeringBullet;
-		var animator = runningBarrage.getAnimator(bullet);
 		if (def.speed != null) {
-			var speedAnimator = animator.getSpeed();
 			var speedValue = 0.0;
 			if (def.relative) {
 				speedValue = bullet.speed + def.speed.get(runningBarrage, runningAction);
 			} else {
 				speedValue = def.speed.get(runningBarrage, runningAction);
 			}
-			speedAnimator.retarget(bullet.speed, speedValue, tweenTimeNum, delta);
+			runningBarrage.retargetSpeed(bullet, speedValue, tweenTimeNum, delta);
 		}
 		if (def.direction != null) {
-			var angleAnimator = animator.getAngle();
 			var ang:Float = 0;
 			if (def.direction.modifier.has(AIMED)) {
 				var currentAngle:Float = bullet.angle;
@@ -53,15 +50,14 @@ class PropertyTween implements ITriggerableEvent {
 			if (def.relative) {
 				ang = bullet.angle + ang;
 			}
-			angleAnimator.retarget(bullet.angle, ang, tweenTimeNum, delta);
+			runningBarrage.retargetAngle(bullet, ang, tweenTimeNum, delta);
 		}
 		if (def.acceleration != null) {
-			var accelAnimator = animator.getAcceleration();
 			var accel = def.acceleration.get(runningBarrage, runningAction);
 			if (def.relative) {
 				accel = bullet.acceleration + accel;
 			}
-			accelAnimator.retarget(bullet.acceleration, accel, tweenTimeNum, delta);
+			runningBarrage.retargetAcceleration(bullet, accel, tweenTimeNum, delta);
 		}
 	}
 

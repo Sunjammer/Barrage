@@ -90,8 +90,35 @@ class SoaBulletStore {
 		return posY[handle];
 	}
 
+	public inline function getSpeed(handle:BulletHandle):Float {
+		return speed[handle];
+	}
+
+	public inline function getAngle(handle:BulletHandle):Float {
+		return angle[handle];
+	}
+
+	public inline function getAcceleration(handle:BulletHandle):Float {
+		return acceleration[handle];
+	}
+
 	public inline function isActive(handle:BulletHandle):Bool {
 		return active[handle];
+	}
+
+	public inline function setSpeed(handle:BulletHandle, value:Float):Void {
+		speed[handle] = value;
+		source[handle].speed = value;
+	}
+
+	public inline function setAngle(handle:BulletHandle, value:Float):Void {
+		angle[handle] = value;
+		source[handle].angle = value;
+	}
+
+	public inline function setAcceleration(handle:BulletHandle, value:Float):Void {
+		acceleration[handle] = value;
+		source[handle].acceleration = value;
 	}
 
 	public inline function syncFromExternal(handle:BulletHandle):Void {
