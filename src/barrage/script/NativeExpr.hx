@@ -33,6 +33,8 @@ class NativeExpr {
 	final immF:Array<Float>;
 	final immI:Array<Int>;
 	final varNames:Array<String>;
+	final varSlots:Array<Int>;
+	var boundCtx:ScriptContext;
 	final isConst:Bool;
 	final stack:Array<Float>;
 
@@ -108,6 +110,8 @@ class NativeExpr {
 		}
 
 		isConst = constant;
+		varSlots = [];
+		boundCtx = null;
 		this.stack = [];
 	}
 
@@ -122,6 +126,9 @@ class NativeExpr {
 	}
 
 	function evalInternal(ctx:ScriptContext, constMode:Bool):Float {
+		if (!constMode && !isConst) {
+			bindSlots(ctx);
+		}
 		var top = 0;
 		for (pc in 0...ops.length) {
 			switch (ops[pc]) {
@@ -130,10 +137,9 @@ class NativeExpr {
 				case NativeOp.PUSH_VAR:
 					if (constMode)
 						throw "NativeExpr is not constant";
-					final name = varNames[immI[pc]];
-					final v = ctx.getVar(name);
+					final v = ctx.getVarBySlot(varSlots[immI[pc]]);
 					if (v == null)
-						throw "Unknown variable: " + name;
+						throw "Unknown variable: " + varNames[immI[pc]];
 					stack[top++] = v;
 				case NativeOp.RAND:
 					if (constMode)
@@ -214,6 +220,17 @@ class NativeExpr {
 		if (!isConst)
 			throw "NativeExpr is not constant";
 		return evalInternal(null, true);
+	}
+
+	inline function bindSlots(ctx:ScriptContext):Void {
+		if (boundCtx == ctx) {
+			return;
+		}
+		boundCtx = ctx;
+		varSlots.resize(varNames.length);
+		for (i in 0...varNames.length) {
+			varSlots[i] = ctx.resolveSlot(varNames[i]);
+		}
 	}
 
 	public static function compile(raw:String):Null<NativeExpr> {

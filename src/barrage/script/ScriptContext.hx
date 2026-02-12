@@ -12,7 +12,9 @@ class ScriptContext {
 	#end
 	public var strictNativeExpressions:Bool;
 
-	final vars:Map<String, Float>;
+	final slotsByName:Map<String, Int>;
+	final slotValues:Array<Float>;
+	final slotHasValue:Array<Bool>;
 
 	public function new(rng:IRng, strictNativeExpressions:Bool = false, ?profile:Dynamic) {
 		this.rng = rng;
@@ -20,7 +22,9 @@ class ScriptContext {
 		this.profile = cast profile;
 		#end
 		this.strictNativeExpressions = strictNativeExpressions;
-		this.vars = new Map<String, Float>();
+		this.slotsByName = new Map<String, Int>();
+		this.slotValues = [];
+		this.slotHasValue = [];
 	}
 
 	public inline function rand():Float {
@@ -28,10 +32,31 @@ class ScriptContext {
 	}
 
 	public inline function setVar(name:String, value:Float):Void {
-		vars.set(name, value);
+		setVarBySlot(resolveSlot(name), value);
 	}
 
 	public inline function getVar(name:String):Null<Float> {
-		return vars.get(name);
+		final slot = slotsByName.get(name);
+		return slot == null ? null : getVarBySlot(slot);
+	}
+
+	public inline function resolveSlot(name:String):Int {
+		var slot = slotsByName.get(name);
+		if (slot == null) {
+			slot = slotValues.length;
+			slotsByName.set(name, slot);
+			slotValues.push(0.0);
+			slotHasValue.push(false);
+		}
+		return slot;
+	}
+
+	public inline function getVarBySlot(slot:Int):Null<Float> {
+		return slotHasValue[slot] ? slotValues[slot] : null;
+	}
+
+	public inline function setVarBySlot(slot:Int, value:Float):Void {
+		slotValues[slot] = value;
+		slotHasValue[slot] = true;
 	}
 }

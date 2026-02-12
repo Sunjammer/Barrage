@@ -127,10 +127,8 @@ class RunningAction {
 			sleepTime -= delta;
 			if (sleepTime <= 0) {
 				// delta += Math.abs(sleepTime);
-				runningBarrage.scriptContext.setVar("actiontime", actionTime);
-				runningBarrage.scriptContext.setVar("actionTime", actionTime);
-				runningBarrage.scriptContext.setVar("repeatcount", completedCycles);
-				runningBarrage.scriptContext.setVar("repeatCount", completedCycles);
+				runningBarrage.setScriptActionTimeVars(actionTime);
+				runningBarrage.setScriptRepeatCountVars(completedCycles);
 				if (compiledAction != null) {
 					var processedThisTick = 0;
 					while (runEvents < eventsPerCycle) {

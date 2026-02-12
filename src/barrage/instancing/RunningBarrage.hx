@@ -49,6 +49,13 @@ class RunningBarrage {
 	var spatialCellSize:Float = 128;
 	var bulletStore:SoaBulletStore;
 	var tweenStore:SoaTweenStore;
+	var slotDifficulty:Int;
+	var slotBarrageTimeLower:Int;
+	var slotBarrageTimeCamel:Int;
+	var slotActionTimeLower:Int;
+	var slotActionTimeCamel:Int;
+	var slotRepeatCountLower:Int;
+	var slotRepeatCountCamel:Int;
 
 	public var emitter:IBulletEmitter;
 
@@ -82,7 +89,14 @@ class RunningBarrage {
 				bulletNameToId.set(def.name.toLowerCase(), i);
 			}
 		}
-		scriptContext.setVar("difficulty", owner.difficulty);
+		slotDifficulty = scriptContext.resolveSlot("difficulty");
+		slotBarrageTimeLower = scriptContext.resolveSlot("barragetime");
+		slotBarrageTimeCamel = scriptContext.resolveSlot("barrageTime");
+		slotActionTimeLower = scriptContext.resolveSlot("actiontime");
+		slotActionTimeCamel = scriptContext.resolveSlot("actionTime");
+		slotRepeatCountLower = scriptContext.resolveSlot("repeatcount");
+		slotRepeatCountCamel = scriptContext.resolveSlot("repeatCount");
+		scriptContext.setVarBySlot(slotDifficulty, owner.difficulty);
 	}
 
 	public function start():Void {
@@ -91,8 +105,8 @@ class RunningBarrage {
 		#if barrage_profile
 		profile.reset();
 		#end
-		scriptContext.setVar("barragetime", time);
-		scriptContext.setVar("barrageTime", time);
+		scriptContext.setVarBySlot(slotBarrageTimeLower, time);
+		scriptContext.setVarBySlot(slotBarrageTimeCamel, time);
 		runAction(null, new RunningAction(this, owner.start, useVmExecution));
 		started = true;
 	}
@@ -126,8 +140,8 @@ class RunningBarrage {
 			profile.cleanupSeconds += Timer.stamp() - tCleanup;
 		#end
 
-		scriptContext.setVar("barragetime", time);
-		scriptContext.setVar("barrageTime", time);
+		scriptContext.setVarBySlot(slotBarrageTimeLower, time);
+		scriptContext.setVarBySlot(slotBarrageTimeCamel, time);
 
 		if (activeActions.length == 0) {
 			stop();
@@ -657,5 +671,15 @@ class RunningBarrage {
 		} else {
 			bullet.acceleration = value;
 		}
+	}
+
+	public inline function setScriptActionTimeVars(value:Float):Void {
+		scriptContext.setVarBySlot(slotActionTimeLower, value);
+		scriptContext.setVarBySlot(slotActionTimeCamel, value);
+	}
+
+	public inline function setScriptRepeatCountVars(value:Int):Void {
+		scriptContext.setVarBySlot(slotRepeatCountLower, value);
+		scriptContext.setVarBySlot(slotRepeatCountCamel, value);
 	}
 }
