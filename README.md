@@ -20,6 +20,89 @@ Targeting now supports named target selectors and dynamic bullet queries:
 	set direction to aimed at nearest_seed over 0.1 seconds
 	fire mybullet in aimed at hero direction 0
 
+Language Features Overview
+========
+
+This is a quick capability summary. See `Language Spec (Current)` below for concrete syntax details.
+
+- Structure model:
+  - `barrage` root
+  - `bullet` definitions (initial properties + optional attached action)
+  - `action` definitions (event timelines)
+  - `target` aliases for reusable aiming selectors
+- Event/control model:
+  - `fire`, `wait`, `set`, `increment`, `die`/`vanish`
+  - `repeat <n> times`, `repeat forever`
+  - nested `do action` blocks
+  - action references with per-call overrides
+- Aiming/space modifiers:
+  - `absolute`, `relative`, `incremental`, `aimed`
+  - `aimed at <target>` on direction operations
+  - vector spawn offsets (`from ... position [x,y]`)
+- Targeting:
+  - built-ins: `player`, `parent`, `self`
+  - aliases via `target called ...`
+  - dynamic query: `nearest bullet where type is <name>`
+- Expression system:
+  - constants + folded constant math in parens
+  - scripted numeric expressions in parens
+  - scripted vector components (`[(expr),(expr)]`)
+  - deterministic `rand()` via injected/seeded RNG
+  - native math functions (`Math.sin`, `Math.atan2`, `Math.pow`, etc.)
+- Runtime behavior:
+  - deterministic default RNG (`SeededRng(0)`)
+  - `onComplete` when actions finish
+  - bullets continue simulating after action completion
+  - runner idles only when both actions and bullets are done
+- Tooling:
+  - parse/grammar/runtime tests in `tests/TestMain.hx`
+  - benchmark profiles in the same harness
+  - optional C++ benchmark build target via `benchmark-cpp.hxml`
+
+Authoring Guide (Practical)
+========
+
+Use this as a quick manual for writing maintainable barrages.
+
+- Start with this skeleton:
+
+	barrage called my_pattern
+		bullet called pellet
+			speed is 150
+		action called start
+			fire pellet in aimed direction 0
+
+- Split intent by action role:
+  - `start`: entrypoint / scheduling
+  - helper actions: one behavior each (ring, burst, chase, pause)
+  - bullet-attached actions: per-bullet long-lived behaviors
+- Prefer explicit target aliases for readability:
+  - `target called hero is player`
+  - `set direction to aimed at hero over 0.2 seconds`
+- Use modifiers consistently:
+  - `absolute`: world-space value
+  - `relative`: relative to current owner/origin context
+  - `incremental`: sequential offset from previous emitted/assigned value
+  - `aimed`: compute direction to a target, then apply offset
+- Keep timelines legible:
+  - pair burst blocks with waits (`fire ...`, then `wait ...`)
+  - isolate repeating blocks in helper actions
+  - use named override properties instead of duplicating action bodies
+- Recommended pattern composition:
+  - base lane pressure: aimed bursts + cooldown
+  - area denial: periodic radial rings
+  - trap pressure: delayed retargeting bullets
+  - combine with staggered waits for layered difficulty
+- Determinism tips:
+  - inject a known seed for reproducible replays/tests
+  - keep randomness in explicit expressions (`rand()*spread`)
+  - verify digest outputs in tests when changing grammar/runtime
+- Common failure modes:
+  - unknown action/bullet references
+  - unsupported expressions (parser throws)
+  - mistaken relative vs incremental semantics in `fire` clauses
+  - finite `start` action without restart logic in game loop
+
 Language
 ========
 The following describes a bullet system where the initial action fires a slow bullet towards the player that "bursts" 6 times into a circular spread of more bullets before disappearing. The spawned bullets first spread, then gradually form into "waves" that flow towards the player. 
