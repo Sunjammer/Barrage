@@ -282,7 +282,7 @@ class RunningAction {
 	}
 
 	inline function vmDie(runningBarrage:RunningBarrage, d:DieEventDef):Void {
-		runningBarrage.emitter.kill(triggeringBullet);
+		runningBarrage.killBullet(triggeringBullet);
 	}
 
 	public function getProperty(name:String):Property {

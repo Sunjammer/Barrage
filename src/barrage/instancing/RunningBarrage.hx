@@ -9,6 +9,7 @@ import barrage.data.targets.TargetSelector;
 import barrage.instancing.animation.Animator;
 import barrage.instancing.events.FireEvent;
 import barrage.instancing.IOrigin;
+import barrage.instancing.SoaBulletStore.BulletHandle;
 import barrage.script.ScriptContext;
 import haxe.Timer;
 import haxe.ds.IntMap;
@@ -25,7 +26,7 @@ class RunningBarrage {
 	public var onComplete:RunningBarrage->Void;
 	public var lastBulletFired:IBarrageBullet;
 	public var animators:Array<Animator>;
-	public var bullets:Array<IBarrageBullet>;
+	public var bullets:Array<BulletHandle>;
 	public var speedScale:Float;
 	public var accelScale:Float;
 	public var rng:IRng;
@@ -42,10 +43,11 @@ class RunningBarrage {
 	var lastDelta:Float = 0;
 	var animatorByTarget:ObjectMap<IBarrageBullet, Animator>;
 	var bulletNameToId:Map<String, Int>;
-	var bulletsByDef:Array<Array<IBarrageBullet>>;
-	var spatialByType:Array<IntMap<Array<IBarrageBullet>>>;
+	var bulletsByDef:Array<Array<BulletHandle>>;
+	var spatialByType:Array<IntMap<Array<BulletHandle>>>;
 	var spatialTickByType:Array<Int>;
 	var spatialCellSize:Float = 128;
+	var bulletStore:SoaBulletStore;
 
 	public var emitter:IBulletEmitter;
 
@@ -61,6 +63,7 @@ class RunningBarrage {
 		this.compiledProgram = useVmExecution ? owner.compile() : null;
 		activeActions = [];
 		bullets = [];
+		bulletStore = new SoaBulletStore();
 		animators = [];
 		animatorByTarget = new ObjectMap<IBarrageBullet, Animator>();
 		bulletNameToId = new Map<String, Int>();
@@ -140,7 +143,10 @@ class RunningBarrage {
 	inline function cleanBullets():Void {
 		var i = bullets.length;
 		while (i-- > 0) {
-			if (!bullets[i].active) {
+			final handle = bullets[i];
+			bulletStore.syncFromExternal(handle);
+			if (!bulletStore.isActive(handle)) {
+				bulletStore.release(handle);
 				final last = bullets.pop();
 				if (i < bullets.length) {
 					bullets[i] = last;
@@ -157,7 +163,7 @@ class RunningBarrage {
 			var i = bucket.length;
 			var removedAny = false;
 			while (i-- > 0) {
-				if (!bucket[i].active) {
+				if (!bulletStore.isActive(bucket[i])) {
 					bucket.splice(i, 1);
 					removedAny = true;
 				}
@@ -230,6 +236,7 @@ class RunningBarrage {
 		bulletsByDef = [];
 		spatialByType = [];
 		spatialTickByType = [];
+		bulletStore = new SoaBulletStore();
 	}
 
 	function applyProperty(origin:Vec2, base:Float, prev:Float, prop:Property, runningBarrage:RunningBarrage, runningAction:RunningAction):Float {
@@ -297,56 +304,56 @@ class RunningBarrage {
 			}
 		}
 
-		var nearest:IBarrageBullet = null;
+		var nearest:BulletHandle = BulletHandle.INVALID;
 		var bestDist2 = Math.POSITIVE_INFINITY;
-		for (bullet in bucket) {
-			if (!bullet.active)
+		for (handle in bucket) {
+			if (!bulletStore.isActive(handle))
 				continue;
-			final dx = bullet.posX - origin.posX;
-			final dy = bullet.posY - origin.posY;
+			final dx = bulletStore.getPosX(handle) - origin.posX;
+			final dy = bulletStore.getPosY(handle) - origin.posY;
 			final dist2 = dx * dx + dy * dy;
 			if (dist2 < bestDist2) {
 				bestDist2 = dist2;
-				nearest = bullet;
+				nearest = handle;
 			}
 		}
 		if (profilingEnabled) {
 			profile.targetingSeconds += Timer.stamp() - t0;
 		}
-		return nearest != null ? nearest : emitter;
+		return nearest != BulletHandle.INVALID ? bulletStore.getSource(nearest) : emitter;
 	}
 
 	inline function spatialKey(ix:Int, iy:Int):Int {
 		return ((ix & 0xFFFF) << 16) ^ (iy & 0xFFFF);
 	}
 
-	function ensureSpatialForType(typeId:Int, bucket:Array<IBarrageBullet>):IntMap<Array<IBarrageBullet>> {
+	function ensureSpatialForType(typeId:Int, bucket:Array<BulletHandle>):IntMap<Array<BulletHandle>> {
 		if (spatialTickByType[typeId] == tickCount && spatialByType[typeId] != null) {
 			return spatialByType[typeId];
 		}
-		final map = new IntMap<Array<IBarrageBullet>>();
-		for (b in bucket) {
-			if (!b.active)
+		final map = new IntMap<Array<BulletHandle>>();
+		for (handle in bucket) {
+			if (!bulletStore.isActive(handle))
 				continue;
-			final ix = Std.int(Math.floor(b.posX / spatialCellSize));
-			final iy = Std.int(Math.floor(b.posY / spatialCellSize));
+			final ix = Std.int(Math.floor(bulletStore.getPosX(handle) / spatialCellSize));
+			final iy = Std.int(Math.floor(bulletStore.getPosY(handle) / spatialCellSize));
 			final key = spatialKey(ix, iy);
 			var cell = map.get(key);
 			if (cell == null) {
 				cell = [];
 				map.set(key, cell);
 			}
-			cell.push(b);
+			cell.push(handle);
 		}
 		spatialByType[typeId] = map;
 		spatialTickByType[typeId] = tickCount;
 		return map;
 	}
 
-	function querySpatialNearest(spatial:IntMap<Array<IBarrageBullet>>, x:Float, y:Float):IBarrageBullet {
+	function querySpatialNearest(spatial:IntMap<Array<BulletHandle>>, x:Float, y:Float):IOrigin {
 		final baseX = Std.int(Math.floor(x / spatialCellSize));
 		final baseY = Std.int(Math.floor(y / spatialCellSize));
-		var nearest:IBarrageBullet = null;
+		var nearest:BulletHandle = BulletHandle.INVALID;
 		var bestDist2 = Math.POSITIVE_INFINITY;
 		final maxRadius = 12;
 		for (r in 0...maxRadius + 1) {
@@ -361,27 +368,27 @@ class RunningBarrage {
 					final cell = spatial.get(spatialKey(ix, iy));
 					if (cell == null)
 						continue;
-					for (b in cell) {
-						if (!b.active)
+					for (handle in cell) {
+						if (!bulletStore.isActive(handle))
 							continue;
-						final dx = b.posX - x;
-						final dy = b.posY - y;
+						final dx = bulletStore.getPosX(handle) - x;
+						final dy = bulletStore.getPosY(handle) - y;
 						final dist2 = dx * dx + dy * dy;
 						if (dist2 < bestDist2) {
 							bestDist2 = dist2;
-							nearest = b;
+							nearest = handle;
 						}
 					}
 				}
 			}
-			if (nearest != null) {
+			if (nearest != BulletHandle.INVALID) {
 				final safeBest = bestDist2 <= 0 ? 0 : Math.sqrt(bestDist2);
 				if ((r + 1) * spatialCellSize > safeBest) {
-					return nearest;
+					return bulletStore.getSource(nearest);
 				}
 			}
 		}
-		return nearest;
+		return nearest != BulletHandle.INVALID ? bulletStore.getSource(nearest) : null;
 	}
 
 	public function getAngleToTarget(originX:Float, originY:Float, action:RunningAction, selector:TargetSelector):Float {
@@ -469,19 +476,34 @@ class RunningBarrage {
 		action.prevPositionY = basePosition.y;
 
 		var spd = baseSpeed * speedScale;
-		lastBulletFired = emitter.emit(action.prevPositionX, action.prevPositionY, baseDirection, spd, baseAccel * accelScale, delta);
-		lastBulletFired.id = bulletID;
-		lastBulletFired.speed = spd;
-		lastBulletFired.angle = baseDirection;
-		bullets.push(lastBulletFired);
+		final emitted = emitter.emit(action.prevPositionX, action.prevPositionY, baseDirection, spd, baseAccel * accelScale, delta);
+		emitted.id = bulletID;
+		emitted.speed = spd;
+		emitted.angle = baseDirection;
+		final handle = bulletStore.alloc(emitted, bulletID);
+		lastBulletFired = bulletStore.getSource(handle);
+		bullets.push(handle);
 		profile.bulletsSpawned++;
 		if (bulletID >= 0) {
 			if (bulletsByDef[bulletID] == null) {
 				bulletsByDef[bulletID] = [];
 			}
-			bulletsByDef[bulletID].push(lastBulletFired);
+			bulletsByDef[bulletID].push(handle);
 			spatialTickByType[bulletID] = -1;
 		}
 		return lastBulletFired;
+	}
+
+	public function killBullet(bullet:IBarrageBullet):Void {
+		final handle = getHandleForBullet(bullet);
+		if (handle != BulletHandle.INVALID) {
+			bulletStore.kill(handle, emitter);
+		} else {
+			emitter.kill(bullet);
+		}
+	}
+
+	public function getHandleForBullet(bullet:IBarrageBullet):BulletHandle {
+		return bulletStore.getHandleForBullet(bullet);
 	}
 }

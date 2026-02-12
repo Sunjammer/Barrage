@@ -15,7 +15,7 @@ class DieEvent implements ITriggerableEvent {
 	}
 
 	public inline function trigger(runningAction:RunningAction, runningBarrage:RunningBarrage, delta:Float):Void {
-		runningBarrage.emitter.kill(runningAction.triggeringBullet);
+		runningBarrage.killBullet(runningAction.triggeringBullet);
 	}
 
 	public inline function getType():EventType {
