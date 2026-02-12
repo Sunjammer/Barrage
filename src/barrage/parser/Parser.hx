@@ -13,6 +13,7 @@ import barrage.data.events.PropertyTweenDef;
 import barrage.data.events.WaitDef;
 import barrage.data.properties.DurationType;
 import barrage.data.properties.Property;
+import barrage.script.NativeExpr;
 import barrage.script.ScriptValue;
 import barrage.data.targets.TargetSelector;
 import barrage.parser.Parser.Block;
@@ -340,7 +341,7 @@ class Parser {
 		}
 	}
 
-	static function getToken(bank:Array<String>, tokens:Array<Token>, values:Array<Dynamic>):Void {
+	static function getToken(bank:Array<String>, tokens:Array<Token>, values:Array<Dynamic>, lineNo:Int):Void {
 		var buffer:Array<String> = [];
 		var char:String = bank.pop();
 		var level:Int = 0;
@@ -364,16 +365,23 @@ class Parser {
 			return;
 
 		tokens.push(type);
-		values.push(buildValue(data, type));
+		values.push(buildValue(data, type, lineNo));
 	}
 
-	static private function buildValue(data:String, type:Token):Dynamic {
+	static private function buildValue(data:String, type:Token, lineNo:Int):Dynamic {
 		switch (type) {
 			case TScript:
-				return new ScriptValue(data, new hscript.Parser().parseString(data));
+				try {
+					return new ScriptValue(data);
+				} catch (_:Dynamic) {
+					throw new ParseError(lineNo, 'Unsupported expression: ' + data);
+				}
 			case TConst_math:
-				var expr = new hscript.Parser().parseString(data);
-				return new hscript.Interp().execute(expr);
+				final expr = NativeExpr.compile(data);
+				if (expr == null || !expr.isConstant()) {
+					throw new ParseError(lineNo, 'Unsupported constant expression: ' + data);
+				}
+				return expr.evalConstant();
 			case TNumber:
 				return Std.parseFloat(data);
 			case TVector:
@@ -493,7 +501,7 @@ class Parser {
 		var tokens:Array<Token> = [];
 		var values:Array<Dynamic> = [];
 		while (bank.length > 0) {
-			getToken(bank, tokens, values);
+			getToken(bank, tokens, values, block.lineNo);
 		}
 		tokens.reverse();
 		values.reverse();

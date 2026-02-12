@@ -1,7 +1,5 @@
 package barrage.script;
 
-import hscript.Interp;
-
 private enum NativeToken {
 	TNumber(v:Float);
 	TIdentifier(name:String);
@@ -39,7 +37,7 @@ class NativeExpr {
 		this.stack = [];
 	}
 
-	public function eval(interp:Interp, ctx:ScriptContext):Float {
+	public function eval(ctx:ScriptContext):Float {
 		var top = 0;
 		for (t in rpn) {
 			switch (t) {

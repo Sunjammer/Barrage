@@ -11,7 +11,6 @@ import barrage.instancing.IRng;
 import barrage.instancing.RunningBarrage;
 import barrage.instancing.SeededRng;
 import barrage.parser.Parser;
-import hscript.Interp;
 
 @:allow(barrage.parser.Parser)
 class Barrage {
@@ -24,9 +23,9 @@ class Barrage {
 	public var start:ActionDef;
 	public var bullets:Array<BulletDef>;
 	public var defaultBullet:BulletDef;
-	public var executor:Interp;
 	public var frameRate:Int;
 	public var targets:Map<String, TargetSelector>;
+	var _difficulty:Int = 1;
 	var compiled:Null<CompiledBarrage>;
 
 	public function new() {
@@ -34,11 +33,6 @@ class Barrage {
 		defaultBullet.acceleration.set(0);
 		defaultBullet.speed.set(50);
 		frameRate = 60;
-		executor = new Interp();
-		executor.variables.set("math", Math);
-		executor.variables.set("Math", Math);
-		executor.variables.set("triangle", tri);
-		executor.variables.set("square", sqr);
 		difficulty = 1;
 		actions = [];
 		bullets = [];
@@ -46,33 +40,13 @@ class Barrage {
 		targets.set("player", PLAYER);
 	}
 
-	static function tri(x:Float, a:Float = 0.5):Float {
-		x = x / (2.0 * Math.PI);
-		x = x % 1.0;
-		if (x < 0.0)
-			x = 1.0 + x;
-		if (x < a)
-			x = x / a;
-		else
-			x = 1.0 - (x - a) / (1.0 - a);
-		return -1.0 + 2.0 * x;
-	}
-
-	static function sqr(x:Float, a:Float = 0.5):Float {
-		if (Math.sin(x) > a)
-			x = 1.0;
-		else
-			x = -1.0;
-		return x;
-	}
-
 	inline function set_difficulty(i:Int):Int {
-		executor.variables.set("difficulty", i);
-		return i;
+		_difficulty = i;
+		return _difficulty;
 	}
 
 	inline function get_difficulty():Int {
-		return executor.variables.get("difficulty");
+		return _difficulty;
 	}
 
 	public function toString():String {
@@ -82,10 +56,6 @@ class Barrage {
 	public inline function run(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng):RunningBarrage {
 		// trace("Creating barrage runner");
 		final activeRng = rng == null ? new SeededRng(0) : rng;
-		executor.variables.set("rand", activeRng.nextFloat);
-		final scriptMath = new ScriptMath(activeRng);
-		executor.variables.set("math", scriptMath);
-		executor.variables.set("Math", scriptMath);
 		// run() always defaults to VM execution.
 		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true, false);
 	}
@@ -93,10 +63,6 @@ class Barrage {
 	#if barrage_legacy
 	public inline function runLegacy(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng):RunningBarrage {
 		final activeRng = rng == null ? new SeededRng(0) : rng;
-		executor.variables.set("rand", activeRng.nextFloat);
-		final scriptMath = new ScriptMath(activeRng);
-		executor.variables.set("math", scriptMath);
-		executor.variables.set("Math", scriptMath);
 		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, false, false);
 	}
 	#end
@@ -104,10 +70,6 @@ class Barrage {
 	public inline function runVm(emitter:IBulletEmitter, speedScale:Float = 1.0, accelScale:Float = 1.0, ?rng:IRng,
 			strictNativeExpressions:Bool = true):RunningBarrage {
 		final activeRng = rng == null ? new SeededRng(0) : rng;
-		executor.variables.set("rand", activeRng.nextFloat);
-		final scriptMath = new ScriptMath(activeRng);
-		executor.variables.set("math", scriptMath);
-		executor.variables.set("Math", scriptMath);
 		return new RunningBarrage(emitter, this, speedScale, accelScale, activeRng, true, strictNativeExpressions);
 	}
 
@@ -164,52 +126,5 @@ class Barrage {
 
 	public static inline function fromCompiledBytes(bytes:haxe.io.Bytes):Barrage {
 		return CompiledBarrage.fromBytes(bytes).instantiate();
-	}
-}
-
-private class ScriptMath {
-	public var PI(default, null):Float = Math.PI;
-	public var E(default, null):Float = Math.exp(1);
-
-	final rng:IRng;
-
-	public function new(rng:IRng) {
-		this.rng = rng;
-	}
-
-	public inline function random():Float {
-		return rng.nextFloat();
-	}
-
-	public inline function sin(v:Float):Float {
-		return Math.sin(v);
-	}
-
-	public inline function cos(v:Float):Float {
-		return Math.cos(v);
-	}
-
-	public inline function tan(v:Float):Float {
-		return Math.tan(v);
-	}
-
-	public inline function abs(v:Float):Float {
-		return Math.abs(v);
-	}
-
-	public inline function sqrt(v:Float):Float {
-		return Math.sqrt(v);
-	}
-
-	public inline function pow(v:Float, exp:Float):Float {
-		return Math.pow(v, exp);
-	}
-
-	public inline function min(a:Float, b:Float):Float {
-		return Math.min(a, b);
-	}
-
-	public inline function max(a:Float, b:Float):Float {
-		return Math.max(a, b);
 	}
 }

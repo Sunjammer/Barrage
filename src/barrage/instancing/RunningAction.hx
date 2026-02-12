@@ -200,7 +200,7 @@ class RunningAction {
 	inline function vmWait(runningBarrage:RunningBarrage, waitDef:WaitDef):Void {
 		var wait:Float;
 		if (waitDef.scripted) {
-			wait = waitDef.waitTimeScript.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, enterSerial, cycleCount, runningBarrage.tickCount);
+			wait = waitDef.waitTimeScript.eval(runningBarrage.scriptContext, enterSerial, cycleCount, runningBarrage.tickCount);
 		} else {
 			wait = waitDef.waitTime;
 		}
@@ -258,7 +258,7 @@ class RunningAction {
 	inline function vmPropertyTween(runningBarrage:RunningBarrage, d:PropertyTweenDef, delta:Float):Void {
 		var tweenTime:Float;
 		if (d.scripted) {
-			tweenTime = d.tweenTimeScript.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, enterSerial, cycleCount, runningBarrage.tickCount);
+			tweenTime = d.tweenTimeScript.eval(runningBarrage.scriptContext, enterSerial, cycleCount, runningBarrage.tickCount);
 		} else {
 			tweenTime = d.tweenTime;
 		}

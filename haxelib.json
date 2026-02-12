@@ -9,7 +9,6 @@
     "sunjammer"
   ],
   "dependencies": {
-    "hscript": "",
     "munit": ""
   }
 }

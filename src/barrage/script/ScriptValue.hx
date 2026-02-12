@@ -1,7 +1,4 @@
 package barrage.script;
-
-import hscript.Expr;
-import hscript.Interp;
 #if barrage_profile
 import haxe.Timer;
 #end
@@ -15,8 +12,7 @@ private enum EvalTier {
 
 class ScriptValue {
 	public var source:String;
-	public var expr:Expr;
-	public var nativeExpr:Null<NativeExpr>;
+	public var nativeExpr:NativeExpr;
 	public var tier:EvalTier;
 	public var constant:Null<Float>;
 
@@ -26,15 +22,18 @@ class ScriptValue {
 	var cachedCycle:Int = -1;
 	var cachedTick:Int = -1;
 
-	public function new(source:String, expr:Expr) {
+	public function new(source:String) {
 		this.source = source;
-		this.expr = expr;
-		this.nativeExpr = NativeExpr.compile(source);
+		final compiled = NativeExpr.compile(source);
+		if (compiled == null) {
+			throw 'Unsupported expression: ' + source;
+		}
+		this.nativeExpr = compiled;
 		this.tier = inferTier(source);
-		this.constant = if (nativeExpr != null && nativeExpr.isConstant()) nativeExpr.evalConstant() else null;
+		this.constant = if (nativeExpr.isConstant()) nativeExpr.evalConstant() else null;
 	}
 
-	public function eval(interp:Interp, ctx:ScriptContext, actionSerial:Int, cycle:Int, tick:Int):Float {
+	public function eval(ctx:ScriptContext, actionSerial:Int, cycle:Int, tick:Int):Float {
 		if (constant != null) {
 			return constant;
 		}
@@ -45,21 +44,10 @@ class ScriptValue {
 		#if barrage_profile
 		final t0 = Timer.stamp();
 		#end
-		final out = if (nativeExpr != null) {
-			#if barrage_profile
-			ctx.profile.nativeScriptEvals++;
-			#end
-			nativeExpr.eval(interp, ctx);
-		} else {
-			if (ctx.strictNativeExpressions) {
-				throw 'Unsupported non-native expression in strict mode: ' + source;
-			}
-			#if barrage_profile
-			ctx.profile.fallbackScriptEvals++;
-			#end
-			ctx.syncToInterp(interp);
-			interp.execute(expr);
-		}
+		#if barrage_profile
+		ctx.profile.nativeScriptEvals++;
+		#end
+		final out = nativeExpr.eval(ctx);
 		#if barrage_profile
 		ctx.profile.scriptEvalSeconds += (Timer.stamp() - t0);
 		#end

@@ -564,7 +564,7 @@ class TestMain {
 			"barrage called profile_metrics\n"
 			+ "\ttarget called near_worker is nearest bullet where type is worker\n"
 			+ "\tbullet called worker\n"
-			+ "\t\tspeed is (difficulty > 0 ? 100 : 50)\n"
+			+ "\t\tspeed is (50 + difficulty*50)\n"
 			+ "\t\tdo action\n"
 			+ "\t\t\tset direction to aimed at near_worker over 1 frames\n"
 			+ "\t\t\twait 1 frames\n"
@@ -586,7 +586,7 @@ class TestMain {
 		assertTrue(running.profile.cleanupSeconds >= 0, "Expected cleanupSeconds metric to be valid.");
 		assertTrue(running.profile.scriptEvalSeconds >= 0, "Expected scriptEvalSeconds metric to be valid.");
 		assertTrue(running.profile.nativeScriptEvals > 0, "Expected native script eval count > 0.");
-		assertTrue(running.profile.fallbackScriptEvals > 0, "Expected fallback script eval count > 0.");
+		assertIntEquals(0, running.profile.fallbackScriptEvals, "Fallback eval count should stay zero without hscript.");
 		assertTrue(running.profile.targetQueries > 0, "Expected target queries count > 0.");
 		assertTrue(running.profile.bulletsSpawned > 0, "Expected spawned bullet count > 0.");
 		assertTrue(running.profile.peakActiveBullets > 0, "Expected peak active bullets > 0.");
@@ -600,15 +600,7 @@ class TestMain {
 			+ "\t\tspeed is (difficulty > 0 ? 100 : 50)\n"
 			+ "\taction called start\n"
 			+ "\t\tfire source in absolute direction 0\n";
-		final barrage = Barrage.fromString(source, false);
-		final emitter = new MockEmitter();
-		final strictRunner = barrage.runVm(emitter, 1.0, 1.0, new SeededRng(1), true);
-		assertThrows(function() {
-			strictRunner.start();
-		}, "Unsupported non-native expression in strict mode");
-
-		final relaxedRunner = barrage.runVm(new MockEmitter(), 1.0, 1.0, new SeededRng(1), false);
-		relaxedRunner.start();
+		assertParseError(source, "Unsupported expression");
 	}
 
 	static function testVmStrictNativeMathFunctions():Void {

@@ -54,7 +54,7 @@ class Property {
 		if (scripted) {
 			final serial = action == null ? -1 : action.enterSerial;
 			final cycle = action == null ? 0 : action.cycleCount;
-			return script.eval(runningBarrage.owner.executor, runningBarrage.scriptContext, serial, cycle, runningBarrage.tickCount);
+			return script.eval(runningBarrage.scriptContext, serial, cycle, runningBarrage.tickCount);
 		} else {
 			// trace("Value: " + constValue);
 			return constValue;
@@ -63,7 +63,7 @@ class Property {
 
 	public inline function getVector(runningBarrage:RunningBarrage, action:RunningAction):Vector<Float> {
 		if (scripted) {
-			return runningBarrage.owner.executor.execute(script.expr);
+			throw "Scripted vector expressions are not supported without hscript";
 		} else {
 			return constValueVec;
 		}
