@@ -29,86 +29,175 @@ private enum NativeToken {
 }
 
 class NativeExpr {
-	public var rpn:Array<NativeToken>;
+	final ops:Array<Int>;
+	final immF:Array<Float>;
+	final immI:Array<Int>;
+	final varNames:Array<String>;
+	final isConst:Bool;
 	final stack:Array<Float>;
 
 	public function new(rpn:Array<NativeToken>) {
-		this.rpn = rpn;
-		this.stack = [];
-	}
+		ops = [];
+		immF = [];
+		immI = [];
+		varNames = [];
+		final varIndex = new Map<String, Int>();
+		var constant = true;
 
-	public function eval(ctx:ScriptContext):Float {
-		var top = 0;
 		for (t in rpn) {
 			switch (t) {
 				case TNumber(v):
-					stack[top++] = v;
+					pushOp(NativeOp.PUSH_CONST, v, 0);
 				case TIdentifier(name):
+					constant = false;
+					var idx = varIndex.get(name);
+					if (idx == null) {
+						idx = varNames.length;
+						varNames.push(name);
+						varIndex.set(name, idx);
+					}
+					pushOp(NativeOp.PUSH_VAR, 0.0, idx);
+				case TRand:
+					constant = false;
+					pushOp(NativeOp.RAND, 0.0, 0);
+				case TSin:
+					pushOp(NativeOp.SIN, 0.0, 0);
+				case TCos:
+					pushOp(NativeOp.COS, 0.0, 0);
+				case TTan:
+					pushOp(NativeOp.TAN, 0.0, 0);
+				case TAbs:
+					pushOp(NativeOp.ABS, 0.0, 0);
+				case TSqrt:
+					pushOp(NativeOp.SQRT, 0.0, 0);
+				case TFloor:
+					pushOp(NativeOp.FLOOR, 0.0, 0);
+				case TCeil:
+					pushOp(NativeOp.CEIL, 0.0, 0);
+				case TRound:
+					pushOp(NativeOp.ROUND, 0.0, 0);
+				case TExp:
+					pushOp(NativeOp.EXP, 0.0, 0);
+				case TLog:
+					pushOp(NativeOp.LOG, 0.0, 0);
+				case TAsin:
+					pushOp(NativeOp.ASIN, 0.0, 0);
+				case TAcos:
+					pushOp(NativeOp.ACOS, 0.0, 0);
+				case TAtan:
+					pushOp(NativeOp.ATAN, 0.0, 0);
+				case TPow:
+					pushOp(NativeOp.POW, 0.0, 0);
+				case TMin:
+					pushOp(NativeOp.MIN, 0.0, 0);
+				case TMax:
+					pushOp(NativeOp.MAX, 0.0, 0);
+				case TAtan2:
+					pushOp(NativeOp.ATAN2, 0.0, 0);
+				case TAdd:
+					pushOp(NativeOp.ADD, 0.0, 0);
+				case TSub:
+					pushOp(NativeOp.SUB, 0.0, 0);
+				case TMul:
+					pushOp(NativeOp.MUL, 0.0, 0);
+				case TDiv:
+					pushOp(NativeOp.DIV, 0.0, 0);
+				case TNeg:
+					pushOp(NativeOp.NEG, 0.0, 0);
+			}
+		}
+
+		isConst = constant;
+		this.stack = [];
+	}
+
+	inline function pushOp(op:Int, f:Float, i:Int):Void {
+		ops.push(op);
+		immF.push(f);
+		immI.push(i);
+	}
+
+	public function eval(ctx:ScriptContext):Float {
+		return evalInternal(ctx, false);
+	}
+
+	function evalInternal(ctx:ScriptContext, constMode:Bool):Float {
+		var top = 0;
+		for (pc in 0...ops.length) {
+			switch (ops[pc]) {
+				case NativeOp.PUSH_CONST:
+					stack[top++] = immF[pc];
+				case NativeOp.PUSH_VAR:
+					if (constMode)
+						throw "NativeExpr is not constant";
+					final name = varNames[immI[pc]];
 					final v = ctx.getVar(name);
 					if (v == null)
 						throw "Unknown variable: " + name;
 					stack[top++] = v;
-				case TRand:
+				case NativeOp.RAND:
+					if (constMode)
+						throw "NativeExpr is not constant";
 					stack[top++] = ctx.rand();
-				case TSin:
+				case NativeOp.SIN:
 					stack[top - 1] = Math.sin(stack[top - 1]);
-				case TCos:
+				case NativeOp.COS:
 					stack[top - 1] = Math.cos(stack[top - 1]);
-				case TTan:
+				case NativeOp.TAN:
 					stack[top - 1] = Math.tan(stack[top - 1]);
-				case TAbs:
+				case NativeOp.ABS:
 					stack[top - 1] = Math.abs(stack[top - 1]);
-				case TSqrt:
+				case NativeOp.SQRT:
 					stack[top - 1] = Math.sqrt(stack[top - 1]);
-				case TFloor:
+				case NativeOp.FLOOR:
 					stack[top - 1] = Math.floor(stack[top - 1]);
-				case TCeil:
+				case NativeOp.CEIL:
 					stack[top - 1] = Math.ceil(stack[top - 1]);
-				case TRound:
+				case NativeOp.ROUND:
 					stack[top - 1] = Math.round(stack[top - 1]);
-				case TExp:
+				case NativeOp.EXP:
 					stack[top - 1] = Math.exp(stack[top - 1]);
-				case TLog:
+				case NativeOp.LOG:
 					stack[top - 1] = Math.log(stack[top - 1]);
-				case TAsin:
+				case NativeOp.ASIN:
 					stack[top - 1] = Math.asin(stack[top - 1]);
-				case TAcos:
+				case NativeOp.ACOS:
 					stack[top - 1] = Math.acos(stack[top - 1]);
-				case TAtan:
+				case NativeOp.ATAN:
 					stack[top - 1] = Math.atan(stack[top - 1]);
-				case TPow:
+				case NativeOp.POW:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = Math.pow(a, b);
-				case TMin:
+				case NativeOp.MIN:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = Math.min(a, b);
-				case TMax:
+				case NativeOp.MAX:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = Math.max(a, b);
-				case TAtan2:
+				case NativeOp.ATAN2:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = Math.atan2(a, b);
-				case TAdd:
+				case NativeOp.ADD:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = a + b;
-				case TSub:
+				case NativeOp.SUB:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = a - b;
-				case TMul:
+				case NativeOp.MUL:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = a * b;
-				case TDiv:
+				case NativeOp.DIV:
 					final b = stack[--top];
 					final a = stack[--top];
 					stack[top++] = a / b;
-				case TNeg:
+				case NativeOp.NEG:
 					stack[top - 1] = -stack[top - 1];
 			}
 		}
@@ -118,91 +207,13 @@ class NativeExpr {
 	}
 
 	public function isConstant():Bool {
-		for (t in rpn) {
-			switch (t) {
-				case TIdentifier(_) | TRand:
-					return false;
-				default:
-			}
-		}
-		return true;
+		return isConst;
 	}
 
 	public function evalConstant():Float {
-		if (!isConstant())
+		if (!isConst)
 			throw "NativeExpr is not constant";
-		final stack = new Array<Float>();
-		for (t in rpn) {
-			switch (t) {
-				case TNumber(v):
-					stack.push(v);
-				case TSin:
-					stack[stack.length - 1] = Math.sin(stack[stack.length - 1]);
-				case TCos:
-					stack[stack.length - 1] = Math.cos(stack[stack.length - 1]);
-				case TTan:
-					stack[stack.length - 1] = Math.tan(stack[stack.length - 1]);
-				case TAbs:
-					stack[stack.length - 1] = Math.abs(stack[stack.length - 1]);
-				case TSqrt:
-					stack[stack.length - 1] = Math.sqrt(stack[stack.length - 1]);
-				case TFloor:
-					stack[stack.length - 1] = Math.floor(stack[stack.length - 1]);
-				case TCeil:
-					stack[stack.length - 1] = Math.ceil(stack[stack.length - 1]);
-				case TRound:
-					stack[stack.length - 1] = Math.round(stack[stack.length - 1]);
-				case TExp:
-					stack[stack.length - 1] = Math.exp(stack[stack.length - 1]);
-				case TLog:
-					stack[stack.length - 1] = Math.log(stack[stack.length - 1]);
-				case TAsin:
-					stack[stack.length - 1] = Math.asin(stack[stack.length - 1]);
-				case TAcos:
-					stack[stack.length - 1] = Math.acos(stack[stack.length - 1]);
-				case TAtan:
-					stack[stack.length - 1] = Math.atan(stack[stack.length - 1]);
-				case TPow:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(Math.pow(a, b));
-				case TMin:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(Math.min(a, b));
-				case TMax:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(Math.max(a, b));
-				case TAtan2:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(Math.atan2(a, b));
-				case TAdd:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(a + b);
-				case TSub:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(a - b);
-				case TMul:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(a * b);
-				case TDiv:
-					final b = stack.pop();
-					final a = stack.pop();
-					stack.push(a / b);
-				case TNeg:
-					stack.push(-stack.pop());
-				case TIdentifier(_) | TRand:
-					throw "NativeExpr is not constant";
-			}
-		}
-		if (stack.length != 1)
-			throw "Invalid native constant expression stack state";
-		return stack[0];
+		return evalInternal(null, true);
 	}
 
 	public static function compile(raw:String):Null<NativeExpr> {
@@ -235,6 +246,34 @@ class NativeExpr {
 		}
 		return s;
 	}
+}
+
+private class NativeOp {
+	public static inline var PUSH_CONST:Int = 0;
+	public static inline var PUSH_VAR:Int = 1;
+	public static inline var RAND:Int = 2;
+	public static inline var SIN:Int = 3;
+	public static inline var COS:Int = 4;
+	public static inline var TAN:Int = 5;
+	public static inline var ABS:Int = 6;
+	public static inline var SQRT:Int = 7;
+	public static inline var FLOOR:Int = 8;
+	public static inline var CEIL:Int = 9;
+	public static inline var ROUND:Int = 10;
+	public static inline var EXP:Int = 11;
+	public static inline var LOG:Int = 12;
+	public static inline var ASIN:Int = 13;
+	public static inline var ACOS:Int = 14;
+	public static inline var ATAN:Int = 15;
+	public static inline var POW:Int = 16;
+	public static inline var MIN:Int = 17;
+	public static inline var MAX:Int = 18;
+	public static inline var ATAN2:Int = 19;
+	public static inline var ADD:Int = 20;
+	public static inline var SUB:Int = 21;
+	public static inline var MUL:Int = 22;
+	public static inline var DIV:Int = 23;
+	public static inline var NEG:Int = 24;
 }
 
 private class NativeExprParser {
