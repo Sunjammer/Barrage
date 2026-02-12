@@ -50,6 +50,7 @@ class RunningBarrage {
 	static var basePositionVec:Vec2 = {x: 0, y: 0};
 
 	var started:Bool;
+	var actionsCompleted:Bool = false;
 	var lastDelta:Float = 0;
 	var bulletNameToId:Map<String, Int>;
 	var bulletsByDef:Array<Array<BulletHandle>>;
@@ -116,6 +117,7 @@ class RunningBarrage {
 	public function start():Void {
 		time = lastDelta = 0;
 		tickCount = 0;
+		actionsCompleted = false;
 		#if barrage_profile
 		profile.reset();
 		#end
@@ -170,11 +172,12 @@ class RunningBarrage {
 		scriptContext.setVarBySlot(slotBarrageTimeLower, time);
 		scriptContext.setVarBySlot(slotBarrageTimeCamel, time);
 
-		if (activeActions.length == 0) {
-			stop();
-			if (onComplete != null)
-				onComplete(this);
-		} else {
+		if (!actionsCompleted) {
+			if (activeActions.length == 0) {
+				actionsCompleted = true;
+				if (onComplete != null)
+					onComplete(this);
+			} else {
 			#if barrage_profile
 			final tActions = Timer.stamp();
 			#end
@@ -189,8 +192,12 @@ class RunningBarrage {
 			#if barrage_profile
 				profile.actionSeconds += Timer.stamp() - tActions;
 			#end
+			}
 		}
 		simulateBullets(delta);
+		if (actionsCompleted && bullets.length == 0) {
+			started = false;
+		}
 		#if barrage_profile
 		profile.updateTicks++;
 		profile.updateSeconds += Timer.stamp() - tUpdate;

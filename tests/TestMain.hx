@@ -41,6 +41,7 @@ class TestMain {
 		failures += run("parser preserves identifier/script case", testScriptCasePreservation);
 		failures += run("parser handles inline comments", testInlineComments);
 		failures += run("runtime does not stop early when no bullets are active", testNoEarlyStopWithoutBullets);
+		failures += run("runtime keeps simulating bullets after action completion", testBulletsOutliveScriptActions);
 		failures += run("action default repeat runs exactly once", testDefaultRepeatCount);
 		failures += run("running barrage tolerates null onComplete", testNullOnCompleteCallback);
 		failures += run("default rng is deterministic", testDefaultRngDeterministic);
@@ -268,6 +269,36 @@ class TestMain {
 		running.update(1 / 60);
 		running.update(1 / 60);
 		assertIntEquals(1, completeCalls, "Barrage should complete when action finishes.");
+	}
+
+	static function testBulletsOutliveScriptActions():Void {
+		final source =
+			"barrage called bullets_outlive_actions\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 100\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction 0\n"
+			+ "\t\twait 1 frames\n";
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final running = barrage.run(emitter);
+		var completeCalls = 0;
+		running.onComplete = function(_) {
+			completeCalls++;
+		};
+
+		running.start();
+		running.update(1 / 60);
+		running.update(1 / 60);
+
+		assertIntEquals(1, completeCalls, "Expected action completion callback once.");
+		assertIntEquals(0, running.activeActions.length, "Expected no active actions after completion.");
+		assertIntEquals(1, emitter.emitCount, "Expected one spawned bullet.");
+
+		final beforeX = emitter.emitted[0].posX;
+		running.update(1 / 60);
+		final afterX = emitter.emitted[0].posX;
+		assertTrue(afterX > beforeX, "Bullet should keep simulating after barrage actions complete.");
 	}
 
 	static function testStatementTypes():Void {
