@@ -11,6 +11,15 @@ Triggering a Barrage invokes its "initial event", and from there on the game eng
 
 Barrage scripts can be parsed at runtime from loaded files or (eventually) at compile-time using Haxe macros. The latter approach means any used barrage script would be checked for errors during build and there would be no overhead from interpretation.
 
+Script expressions can call `rand()` for deterministic randomness when a seeded RNG is supplied to `run(...)`.
+
+Targeting now supports named target selectors and dynamic bullet queries:
+
+	target called hero is player
+	target called nearest_seed is nearest bullet where type is seed
+	set direction to aimed at nearest_seed over 0.1 seconds
+	fire mybullet in aimed at hero direction 0
+
 Language
 ========
 The following describes a bullet system where the initial action fires a slow bullet towards the player that "bursts" 6 times into a circular spread of more bullets before disappearing. The spawned bullets first spread, then gradually form into "waves" that flow towards the player. 
@@ -62,14 +71,15 @@ The following describes a bullet system where the initial action fires a slow bu
 Implementation
 ========
 
-Barrage as an engine can be considered a "particle governor" in that it needs access to emission and removal functions as well as the properties of each bullet created. Thus, it needs to be mapped against an emitter that implements the IEmitter interface, which needs to return bullets implementing the IBullet interface. When a Barrage is "run", a RunningBarrage instance is created which needs to be updated with an identical delta (in seconds) to the particle system. 
+Barrage as an engine can be considered a "particle governor" in that it needs access to emission and removal functions as well as the properties of each bullet created. Thus, it needs to be mapped against an emitter that implements the `IBulletEmitter` interface, which needs to return bullets implementing the `IBarrageBullet` interface. When a Barrage is "run", a RunningBarrage instance is created which needs to be updated with an identical delta (in seconds) to the particle system. 
 
 The following example code demonstrates this relationship.
 
 	//Init
 	var b = Barrage.fromString(sourceCode); 
-	var runningBarrage = b.run(emitter);
-	runningBarrage.onComplete.add(onBarrageComplete);
+	var runningBarrage = b.run(emitter); // defaults to a deterministic seeded RNG
+	// or inject your own rng: b.run(emitter, 1.0, 1.0, new SeededRng(123));
+	runningBarrage.onComplete = onBarrageComplete;
 	runningBarrage.start();
 
 	//Update
