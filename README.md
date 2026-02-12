@@ -94,3 +94,20 @@ Web IDE Preview
 A lightweight local script IDE with live canvas preview is available in `tools/ide-web`.
 
 Build and run instructions: `tools/ide-web/README.md`
+
+IR Compile + AOT Packaging
+========
+
+The runtime now exposes a compiled program layer:
+
+	// JIT compile and cache IR by source text
+	var compiled = Barrage.compileString(sourceCode);
+
+	// Optional AOT-style package (versioned payload)
+	var bytes = Barrage.compileStringToBytes(sourceCode);
+	var loadedBarrage = Barrage.fromCompiledBytes(bytes);
+
+	// Run loaded barrage as usual
+	var runner = loadedBarrage.run(emitter);
+
+Current AOT payload stores source in a stable envelope and rebuilds IR on load.

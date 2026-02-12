@@ -1,3 +1,7 @@
+# Inchworm pattern:
+# - "wormsegment" bullets oscillate speed while curving
+# - "worm" action emits a circular chain with a rotating phase offset
+
 barrage called inchworm
 	bullet called wormsegment
 		speed is 100

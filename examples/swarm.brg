@@ -1,3 +1,8 @@
+# Swarm pattern:
+# - "seed" bullets fan out from the center
+# - each seed pauses and bursts "homer" bullets
+# - homers continuously re-aim while accelerating
+
 barrage called swarm
 	bullet called homer
 		do action

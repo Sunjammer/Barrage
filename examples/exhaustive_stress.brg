@@ -1,0 +1,58 @@
+# Exhaustive stress pattern:
+# - target aliases (player / parent / nearest bullet type)
+# - scripted constants + rand() expressions
+# - relative/incremental/aimed modifiers
+# - property set + tween + increment statements
+# - action references with property overrides
+# - nested loops with bounded repeat counts for benchmarking
+
+barrage called exhaustive_stress
+	target called hero is player
+	target called parent_source is parent
+	target called nearest_anchor is nearest bullet where type is anchor
+
+	bullet called shard
+		speed is (20 + rand()*40)
+		acceleration is -4
+		do action
+			increment direction by 15 over 5 frames
+			wait 5 frames
+			set direction to aimed at hero over 6 frames
+			set speed to 120 over 20 frames
+			wait 12 frames
+			die
+
+	bullet called anchor
+		speed is (30 + rand()*20)
+		direction is (rand()*360)
+		acceleration is -1
+		do action
+			wait 8 frames
+			fire shard in aimed at parent_source direction 0 with incremental acceleration 2
+			wait 4 frames
+			set speed to 0 over 6 frames
+			wait 6 frames
+			set speed to 40
+			repeat 3 times
+			die
+
+	action called burst
+		spread is (360/7)
+		fire shard from relative position [8,0] in aimed at hero direction (-spread*0.5) with relative acceleration -1
+		do action
+			fire shard from incremental position [2,0] in incremental direction (spread)
+			repeat 6 times
+		wait 8 frames
+
+	action called cycle
+		fire anchor in aimed at hero direction (repeatCount*11)
+		do burst
+			spread is (24 + repeatCount*2)
+		wait 3 frames
+		fire anchor from relative position [10,0] in aimed at nearest_anchor direction (-repeatCount*11)
+		repeat 12 times
+
+	action called start
+		do cycle
+		wait 2 seconds
+		repeat 3 times

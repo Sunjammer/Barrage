@@ -1,4 +1,8 @@
-barrage called blah
+# Development sandbox pattern:
+# - demonstrates relative/incremental spawn positions
+# - demonstrates absolute/incremental acceleration modifiers
+
+barrage called dev
 	bullet called mybullet
 		speed is 100
 
