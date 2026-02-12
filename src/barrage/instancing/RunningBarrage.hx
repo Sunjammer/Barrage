@@ -10,7 +10,9 @@ import barrage.instancing.events.FireEvent;
 import barrage.instancing.IOrigin;
 import barrage.instancing.SoaBulletStore.BulletHandle;
 import barrage.script.ScriptContext;
+#if barrage_profile
 import haxe.Timer;
+#end
 import haxe.ds.IntMap;
 
 typedef Vec2 = {x:Float, y:Float}
@@ -27,8 +29,9 @@ class RunningBarrage {
 	public var speedScale:Float;
 	public var accelScale:Float;
 	public var rng:IRng;
+	#if barrage_profile
 	public var profile:RuntimeProfile;
-	public var profilingEnabled:Bool = false;
+	#end
 	public var scriptContext:ScriptContext;
 	public var useVmExecution:Bool;
 	public var strictNativeExpressions:Bool;
@@ -58,8 +61,12 @@ class RunningBarrage {
 		this.strictNativeExpressions = strictNativeExpressions;
 		this.emitter = emitter;
 		this.owner = owner;
+		#if barrage_profile
 		this.profile = new RuntimeProfile();
-		this.scriptContext = new ScriptContext(rng, profile, strictNativeExpressions);
+		this.scriptContext = new ScriptContext(rng, strictNativeExpressions, profile);
+		#else
+		this.scriptContext = new ScriptContext(rng, strictNativeExpressions);
+		#end
 		this.compiledProgram = useVmExecution ? owner.compile() : null;
 		activeActions = [];
 		bullets = [];
@@ -81,7 +88,9 @@ class RunningBarrage {
 	public function start():Void {
 		time = lastDelta = 0;
 		tickCount = 0;
+		#if barrage_profile
 		profile.reset();
+		#end
 		scriptContext.setVar("barragetime", time);
 		scriptContext.setVar("barrageTime", time);
 		runAction(null, new RunningAction(this, owner.start, useVmExecution));
@@ -98,20 +107,24 @@ class RunningBarrage {
 	public inline function update(delta:Float) {
 		if (!started)
 			return;
-		final tUpdate = profilingEnabled ? Timer.stamp() : 0.0;
+		#if barrage_profile
+		final tUpdate = Timer.stamp();
+		#end
 		time += delta;
 		lastDelta = delta;
 		tickCount++;
 
-		final tCleanup = profilingEnabled ? Timer.stamp() : 0.0;
+		#if barrage_profile
+		final tCleanup = Timer.stamp();
+		#end
 		cleanBullets();
 		if ((tickCount % 120) == 0) {
 			pruneBulletBuckets();
 		}
 		updateTweens(delta);
-		if (profilingEnabled) {
+		#if barrage_profile
 			profile.cleanupSeconds += Timer.stamp() - tCleanup;
-		}
+		#end
 
 		scriptContext.setVar("barragetime", time);
 		scriptContext.setVar("barrageTime", time);
@@ -121,22 +134,24 @@ class RunningBarrage {
 			if (onComplete != null)
 				onComplete(this);
 		} else {
-			final tActions = profilingEnabled ? Timer.stamp() : 0.0;
+			#if barrage_profile
+			final tActions = Timer.stamp();
+			#end
 			var i = activeActions.length;
 			while (i-- > 0) {
 				activeActions[i].update(this, delta);
 			}
-			if (profilingEnabled) {
+			#if barrage_profile
 				profile.actionSeconds += Timer.stamp() - tActions;
-			}
+			#end
 		}
-		if (profilingEnabled) {
-			profile.updateTicks++;
-			profile.updateSeconds += Timer.stamp() - tUpdate;
-			if (bullets.length > profile.peakActiveBullets) {
-				profile.peakActiveBullets = bullets.length;
-			}
+		#if barrage_profile
+		profile.updateTicks++;
+		profile.updateSeconds += Timer.stamp() - tUpdate;
+		if (bullets.length > profile.peakActiveBullets) {
+			profile.peakActiveBullets = bullets.length;
 		}
+		#end
 	}
 
 	inline function cleanBullets():Void {
@@ -267,8 +282,10 @@ class RunningBarrage {
 	}
 
 	function findNearestBulletByType(typeName:String, action:RunningAction):IOrigin {
-		final t0 = profilingEnabled ? Timer.stamp() : 0.0;
+		#if barrage_profile
+		final t0 = Timer.stamp();
 		profile.targetQueries++;
+		#end
 		final origin = getOrigin(action);
 		final targetId = bulletNameToId.get(typeName.toLowerCase());
 		if (targetId == null)
@@ -281,9 +298,9 @@ class RunningBarrage {
 			final spatial = ensureSpatialForType(targetId, bucket);
 			final spatialHit = querySpatialNearest(spatial, origin.posX, origin.posY);
 			if (spatialHit != null) {
-				if (profilingEnabled) {
-					profile.targetingSeconds += Timer.stamp() - t0;
-				}
+				#if barrage_profile
+				profile.targetingSeconds += Timer.stamp() - t0;
+				#end
 				return spatialHit;
 			}
 		}
@@ -301,9 +318,9 @@ class RunningBarrage {
 				nearest = handle;
 			}
 		}
-		if (profilingEnabled) {
-			profile.targetingSeconds += Timer.stamp() - t0;
-		}
+		#if barrage_profile
+		profile.targetingSeconds += Timer.stamp() - t0;
+		#end
 		return nearest != BulletHandle.INVALID ? bulletStore.getSource(nearest) : emitter;
 	}
 
@@ -467,7 +484,9 @@ class RunningBarrage {
 		final handle = bulletStore.alloc(emitted, bulletID);
 		lastBulletFired = bulletStore.getSource(handle);
 		bullets.push(handle);
+		#if barrage_profile
 		profile.bulletsSpawned++;
+		#end
 		if (bulletID >= 0) {
 			if (bulletsByDef[bulletID] == null) {
 				bulletsByDef[bulletID] = [];

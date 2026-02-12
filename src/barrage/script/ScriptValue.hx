@@ -2,7 +2,9 @@ package barrage.script;
 
 import hscript.Expr;
 import hscript.Interp;
+#if barrage_profile
 import haxe.Timer;
+#end
 
 private enum EvalTier {
 	ALWAYS;
@@ -40,19 +42,27 @@ class ScriptValue {
 			return cachedValue;
 		}
 
+		#if barrage_profile
 		final t0 = Timer.stamp();
+		#end
 		final out = if (nativeExpr != null) {
+			#if barrage_profile
 			ctx.profile.nativeScriptEvals++;
+			#end
 			nativeExpr.eval(interp, ctx);
 		} else {
 			if (ctx.strictNativeExpressions) {
 				throw 'Unsupported non-native expression in strict mode: ' + source;
 			}
+			#if barrage_profile
 			ctx.profile.fallbackScriptEvals++;
+			#end
 			ctx.syncToInterp(interp);
 			interp.execute(expr);
 		}
+		#if barrage_profile
 		ctx.profile.scriptEvalSeconds += (Timer.stamp() - t0);
+		#end
 		hasCached = true;
 		cachedValue = out;
 		cachedActionSerial = actionSerial;

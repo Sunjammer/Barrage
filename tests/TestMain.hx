@@ -52,7 +52,9 @@ class TestMain {
 		failures += run("particle governor: bullet moves expected distance over script lifetime", testBulletMotionOverScriptLifetime);
 		failures += run("particle governor: acceleration affects traveled distance", testBulletMotionWithAcceleration);
 		failures += run("SoA handle lifecycle maps and releases bullets correctly", testSoaHandleLifecycle);
+		#if barrage_profile
 		failures += run("runtime profiling captures hot-path metrics", testRuntimeProfilingMetrics);
+		#end
 		failures += run("VM strict native mode rejects unsupported expressions", testVmStrictNativeExpressionMode);
 		failures += run("VM execution parity with legacy runtime", testVmParity);
 		failures += run("VM parity across all shipped examples", testVmParityExamples);
@@ -551,6 +553,7 @@ class TestMain {
 		assertTrue(handleAfter == -1, "Expected handle mapping removed after cleanup.");
 	}
 
+	#if barrage_profile
 	static function testRuntimeProfilingMetrics():Void {
 		final source =
 			"barrage called profile_metrics\n"
@@ -570,7 +573,6 @@ class TestMain {
 		final barrage = Barrage.fromString(source, false);
 		final emitter = new MockEmitter();
 		final running = barrage.run(emitter);
-		running.profilingEnabled = true;
 		running.start();
 		simulate(running, emitter, 1 / 60, 90);
 
@@ -584,6 +586,7 @@ class TestMain {
 		assertTrue(running.profile.bulletsSpawned > 0, "Expected spawned bullet count > 0.");
 		assertTrue(running.profile.peakActiveBullets > 0, "Expected peak active bullets > 0.");
 	}
+	#end
 
 	static function testVmStrictNativeExpressionMode():Void {
 		final source =
