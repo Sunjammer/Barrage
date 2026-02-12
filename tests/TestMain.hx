@@ -5,6 +5,7 @@ import barrage.data.ActionDef;
 import barrage.data.EventDef.EventType;
 import barrage.data.events.FireEventDef;
 import barrage.data.events.WaitDef;
+import barrage.ir.CompiledBarrage;
 import barrage.parser.ParseError;
 import barrage.instancing.IBarrageBullet;
 import barrage.instancing.IBulletEmitter;
@@ -12,6 +13,7 @@ import barrage.instancing.RunningBarrage;
 import barrage.instancing.SeededRng;
 import barrage.data.properties.Property;
 import barrage.data.properties.Property.PropertyModifier;
+import haxe.Timer;
 import haxe.EnumFlags;
 import sys.io.File;
 
@@ -19,6 +21,10 @@ class TestMain {
 	static function main():Void {
 		var failures = 0;
 		failures += run("parser evaluates constant math expressions", testConstMathParsing);
+		failures += run("IR compile cache returns same object for same source", testCompileCache);
+		failures += run("AOT bytes round-trip preserves runnable barrage", testCompiledBytesRoundTrip);
+		failures += run("IR unrolls safe constant repeats", testIrRepeatUnroll);
+		failures += run("IR preserves repeats when repeatCount is referenced", testIrRepeatNoUnrollWhenReferenced);
 		failures += run("parser statement types are classified correctly", testStatementTypes);
 		failures += run("parser supports forward action references", testForwardActionReference);
 		failures += run("parser rejects unknown action references", testUnknownActionReference);
@@ -38,6 +44,10 @@ class TestMain {
 		failures += run("dev example emits expected first incremental outcome", testDevExampleOutcome);
 		failures += run("particle governor: bullet moves expected distance over script lifetime", testBulletMotionOverScriptLifetime);
 		failures += run("particle governor: acceleration affects traveled distance", testBulletMotionWithAcceleration);
+		failures += run("VM execution parity with legacy runtime", testVmParity);
+		failures += run("VM parity across all shipped examples", testVmParityExamples);
+		failures += run("benchmark VM vs legacy runtime", benchmarkVmVsLegacy);
+		failures += run("benchmark stress profiles", benchmarkStressProfiles);
 
 		if (failures == 0) {
 			Sys.println("All tests passed.");
@@ -83,6 +93,60 @@ class TestMain {
 
 		running.update(1 / 60);
 		assertIntEquals(1, emitter.emitCount, "Action should not run a second cycle when repeat count is 1.");
+	}
+
+	static function testCompileCache():Void {
+		final source = "barrage called compile_cache\n\taction called start\n\t\twait 1 frames\n";
+		final a = Barrage.compileString(source, true);
+		final b = Barrage.compileString(source, true);
+		assertTrue(a == b, "Expected same compiled instance from source cache.");
+	}
+
+	static function testCompiledBytesRoundTrip():Void {
+		final source =
+			"barrage called aot_roundtrip\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 42\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction 0\n";
+		final bytes = Barrage.compileStringToBytes(source, false);
+		final compiled = CompiledBarrage.fromBytes(bytes);
+		final barrage = compiled.instantiate();
+		final emitter = new MockEmitter();
+		final running = barrage.run(emitter);
+		running.start();
+		assertIntEquals(1, emitter.emitCount, "Expected one bullet from AOT-loaded barrage.");
+		assertFloatEquals(42, emitter.speeds[0], 1e-6, "Expected emitted speed to match compiled source.");
+	}
+
+	static function testIrRepeatUnroll():Void {
+		final source =
+			"barrage called unroll_ok\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 10\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction 0\n"
+			+ "\t\tfire source in incremental direction 10\n"
+			+ "\t\trepeat 5 times\n";
+		final compiled = Barrage.compileString(source, false);
+		final start = compiled.actions[compiled.startActionId];
+		assertIntEquals(10, start.instructions.length, "Expected 2 instructions unrolled 5x.");
+		assertIntEquals(1, start.repeatCountOverride, "Expected repeat override to 1 after unroll.");
+	}
+
+	static function testIrRepeatNoUnrollWhenReferenced():Void {
+		final source =
+			"barrage called unroll_blocked\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 10\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in absolute direction (repeatCount)\n"
+			+ "\t\twait 1 frames\n"
+			+ "\t\trepeat 5 times\n";
+		final compiled = Barrage.compileString(source, false);
+		final start = compiled.actions[compiled.startActionId];
+		assertIntEquals(2, start.instructions.length, "Expected no unroll when repeatCount is referenced.");
+		assertTrue(start.repeatCountOverride == null, "Expected no repeat override when unroll is blocked.");
 	}
 
 	static function testForwardActionReference():Void {
@@ -247,7 +311,8 @@ class TestMain {
 			"examples/swarm.brg",
 			"examples/inchworm.brg",
 			"examples/dev.brg",
-			"examples/multitarget_demo.brg"
+			"examples/multitarget_demo.brg",
+			"examples/exhaustive_stress.brg"
 		];
 		for (path in files) {
 			final source = File.getContent(path);
@@ -262,6 +327,7 @@ class TestMain {
 		assertStartEventTypes("examples/inchworm.brg", [EventType.ACTION_REF, EventType.WAIT]);
 		assertStartEventTypes("examples/dev.brg", [EventType.FIRE, EventType.ACTION]);
 		assertStartEventTypes("examples/multitarget_demo.brg", [EventType.FIRE, EventType.ACTION, EventType.WAIT, EventType.FIRE, EventType.ACTION]);
+		assertStartEventTypes("examples/exhaustive_stress.brg", [EventType.ACTION_REF, EventType.WAIT]);
 	}
 
 	static function testNearestBulletTargeting():Void {
@@ -345,6 +411,127 @@ class TestMain {
 		assertFloatEquals(20, bullet.posX, 0.5, "Bullet should travel ~20 units in 2 seconds under +10 accel.");
 	}
 
+	static function testVmParity():Void {
+		final source =
+			"barrage called vm_parity\n"
+			+ "\tbullet called source\n"
+			+ "\t\tspeed is 120\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\twait 10 frames\n"
+			+ "\t\t\tdie\n"
+			+ "\taction called start\n"
+			+ "\t\tfire source in aimed direction 0\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\twait 2 frames\n"
+			+ "\t\t\tfire source in incremental direction 15\n"
+			+ "\t\t\trepeat 8 times\n";
+
+		final legacy = runSimulation(source, false, 180);
+		final vm = runSimulation(source, true, 180);
+		assertIntEquals(legacy.emitCount, vm.emitCount, "VM and legacy emit count should match.");
+		assertIntEquals(legacy.killCount, vm.killCount, "VM and legacy kill count should match.");
+		assertStringEquals(simulationDigest(legacy), simulationDigest(vm), "VM and legacy simulation digest should match.");
+	}
+
+	static function testVmParityExamples():Void {
+		final files = [
+			"examples/waveburst.brg",
+			"examples/swarm.brg",
+			"examples/inchworm.brg",
+			"examples/multitarget_demo.brg",
+			"examples/dev.brg",
+			"examples/exhaustive_stress.brg"
+		];
+		for (path in files) {
+			final source = File.getContent(path);
+			final legacy = runSimulation(source, false, 600);
+			final vm = runSimulation(source, true, 600);
+			assertStringEquals(simulationDigest(legacy), simulationDigest(vm), "Parity mismatch for " + path);
+		}
+	}
+
+	static function benchmarkVmVsLegacy():Void {
+		final source = File.getContent("examples/exhaustive_stress.brg");
+
+		final iterations = 30;
+		final legacyTime = benchmark(source, false, iterations, 720);
+		final vmTime = benchmark(source, true, iterations, 720);
+		Sys.println('BENCH legacy=${legacyTime}s vm=${vmTime}s iterations=${iterations}');
+		assertTrue(legacyTime > 0 && vmTime > 0, "Benchmark timings must be positive.");
+		// Guardrail only: VM should be in same order of magnitude while we iterate.
+		assertTrue(vmTime < legacyTime * 5.0, "VM path is unexpectedly slower than legacy.");
+	}
+
+	static function benchmarkStressProfiles():Void {
+		final profiles = [
+			{
+				name: "exhaustive_stress_file",
+				source: File.getContent("examples/exhaustive_stress.brg"),
+				iterations: 20,
+				steps: 720,
+				maxSlowdown: 5.0
+			},
+			{
+				name: "spawn_storm_dense",
+				source: buildSpawnStormProfileSource(),
+				iterations: 40,
+				steps: 360,
+				maxSlowdown: 5.0
+			},
+			{
+				name: "scripted_churn",
+				source: buildScriptedChurnProfileSource(),
+				iterations: 30,
+				steps: 480,
+				maxSlowdown: 5.0
+			}
+		];
+
+		for (p in profiles) {
+			final legacyTime = benchmark(p.source, false, p.iterations, p.steps);
+			final vmTime = benchmark(p.source, true, p.iterations, p.steps);
+			final ratio = vmTime / legacyTime;
+			Sys.println('PROFILE ${p.name} legacy=${legacyTime}s vm=${vmTime}s ratio=${ratio} iterations=${p.iterations} steps=${p.steps}');
+			assertTrue(legacyTime > 0 && vmTime > 0, "Profile benchmark timings must be positive for " + p.name);
+			assertTrue(ratio < p.maxSlowdown, "VM slowdown too high for " + p.name + " (ratio=" + ratio + ")");
+		}
+	}
+
+	static function buildSpawnStormProfileSource():String {
+		return "barrage called spawn_storm_dense\n"
+			+ "\tbullet called pellet\n"
+			+ "\t\tspeed is 280\n"
+			+ "\taction called ring\n"
+			+ "\t\tfire pellet in absolute direction 0\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\tfire pellet in incremental direction (360/24)\n"
+			+ "\t\t\trepeat 23 times\n"
+			+ "\t\trepeat 5 times\n"
+			+ "\taction called start\n"
+			+ "\t\tdo ring\n"
+			+ "\t\twait 1 frames\n"
+			+ "\t\trepeat 12 times\n";
+	}
+
+	static function buildScriptedChurnProfileSource():String {
+		return "barrage called scripted_churn\n"
+			+ "\tbullet called worker\n"
+			+ "\t\tspeed is (120 + rand()*60)\n"
+			+ "\t\tdirection is (rand()*360)\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\tset direction to aimed over 1 frames\n"
+			+ "\t\t\tincrement speed by (5 + rand()*5) over 1 frames\n"
+			+ "\t\t\tset acceleration to (-20 + rand()*40) over 1 frames\n"
+			+ "\t\t\twait 1 frames\n"
+			+ "\t\t\trepeat forever\n"
+			+ "\taction called start\n"
+			+ "\t\tfire worker in absolute direction (rand()*360)\n"
+			+ "\t\tdo action\n"
+			+ "\t\t\twait 2 frames\n"
+			+ "\t\t\tfire worker in absolute direction (rand()*360 + repeatCount*3)\n"
+			+ "\t\t\trepeat 80 times\n";
+	}
+
 	static function collectRandomFireAngles(?rng:SeededRng):Array<Float> {
 		final barrage = new Barrage();
 		final action = new ActionDef("start");
@@ -426,6 +613,12 @@ class TestMain {
 		}
 	}
 
+	static function assertStringEquals(expected:String, actual:String, message:String):Void {
+		if (expected != actual) {
+			throw message + " Expected: " + expected + ", actual: " + actual;
+		}
+	}
+
 	static function assertStartEventTypes(path:String, expected:Array<EventType>):Void {
 		final barrage = Barrage.fromString(File.getContent(path), false);
 		final events = barrage.start.events;
@@ -441,12 +634,55 @@ class TestMain {
 			emitter.update(dt);
 		}
 	}
+
+	static function runSimulation(source:String, useVm:Bool, steps:Int):MockEmitter {
+		final barrage = Barrage.fromString(source, false);
+		final emitter = new MockEmitter();
+		final running = useVm ? barrage.runVm(emitter) : barrage.run(emitter);
+		running.start();
+		simulate(running, emitter, 1 / 60, steps);
+		return emitter;
+	}
+
+	static function simulationDigest(emitter:MockEmitter):String {
+		final out = new Array<String>();
+		out.push("emit=" + emitter.emitCount);
+		out.push("kill=" + emitter.killCount);
+		out.push("active=" + emitter.activeCount());
+		final n = emitter.emitted.length;
+		out.push("spawned=" + n);
+		for (i in 0...n) {
+			final b = emitter.emitted[i];
+			out.push(i
+				+ ":id=" + b.id
+				+ ",x=" + fmt(b.posX)
+				+ ",y=" + fmt(b.posY)
+				+ ",a=" + fmt(b.angle)
+				+ ",s=" + fmt(b.speed)
+				+ ",acc=" + fmt(b.acceleration)
+				+ ",on=" + (b.active ? "1" : "0"));
+		}
+		return out.join("|");
+	}
+
+	static inline function fmt(v:Float):String {
+		return Std.string(Math.fround(v * 10000) / 10000);
+	}
+
+	static function benchmark(source:String, useVm:Bool, iterations:Int, steps:Int):Float {
+		final start = Timer.stamp();
+		for (_ in 0...iterations) {
+			runSimulation(source, useVm, steps);
+		}
+		return Timer.stamp() - start;
+	}
 }
 
 private class MockEmitter implements IBulletEmitter {
 	public var posX:Float = 0;
 	public var posY:Float = 0;
 	public var emitCount:Int = 0;
+	public var killCount:Int = 0;
 	public var angles:Array<Float> = [];
 	public var speeds:Array<Float> = [];
 	public var accelerations:Array<Float> = [];
@@ -479,6 +715,7 @@ private class MockEmitter implements IBulletEmitter {
 	}
 
 	public function kill(bullet:IBarrageBullet):Void {
+		killCount++;
 		bullet.active = false;
 	}
 
@@ -493,6 +730,15 @@ private class MockEmitter implements IBulletEmitter {
 			bullet.posX += bullet.velocityX * delta;
 			bullet.posY += bullet.velocityY * delta;
 		}
+	}
+
+	public function activeCount():Int {
+		var count = 0;
+		for (bullet in emitted) {
+			if (bullet.active)
+				count++;
+		}
+		return count;
 	}
 }
 
