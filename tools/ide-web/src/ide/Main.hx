@@ -19,8 +19,11 @@ class Main {
 	static final FIXED_DT = 1.0 / 60.0;
 	static final PRESETS:Array<{name:String, script:String}> = [
 		{name: "Waveburst", script: Scripts.waveburst},
+		{name: "Inchworm", script: Scripts.inchworm},
 		{name: "Swarm", script: Scripts.swarm},
-		{name: "Multitarget Demo", script: Scripts.multitarget}
+		{name: "Multitarget Demo", script: Scripts.multitarget},
+		{name: "Exhaustive Stress", script: Scripts.exhaustive},
+		{name: "Dev Sandbox", script: Scripts.dev}
 	];
 
 	static var editor:TextAreaElement;
@@ -29,6 +32,7 @@ class Main {
 	static var presetEl:SelectElement;
 	static var seedEl:InputElement;
 	static var speedEl:InputElement;
+	static var autoRestartEl:InputElement;
 	static var playPauseEl:js.html.ButtonElement;
 	static var canvas:CanvasElement;
 	static var ctx:CanvasRenderingContext2D;
@@ -41,6 +45,7 @@ class Main {
 	static var accumulator = 0.0;
 	static var debounceHandle:Null<Int>;
 	static var draggingTarget = false;
+	static var completionIdleTime = 0.0;
 
 	static function main():Void {
 		editor = cast Browser.document.getElementById("editor");
@@ -49,6 +54,7 @@ class Main {
 		presetEl = cast Browser.document.getElementById("preset");
 		seedEl = cast Browser.document.getElementById("seed");
 		speedEl = cast Browser.document.getElementById("speed");
+		autoRestartEl = cast Browser.document.getElementById("autoRestart");
 		playPauseEl = cast Browser.document.getElementById("playPause");
 		canvas = cast Browser.document.getElementById("preview");
 		ctx = cast canvas.getContext2d();
@@ -158,10 +164,13 @@ class Main {
 		final seed = Std.parseInt(seedEl.value);
 		final safeSeed = seed == null ? 1 : seed;
 		emitter.reset();
+		completionIdleTime = 0;
 		try {
 			final barrage = Barrage.fromString(editor.value, false);
 			running = barrage.run(emitter, 1.0, 1.0, new SeededRng(safeSeed));
-			running.onComplete = function(_) {};
+			running.onComplete = function(_) {
+				completionIdleTime = 0;
+			};
 			running.start();
 			setStatus('Parsed OK. Barrage: ${barrage.name}', true);
 		} catch (e:Dynamic) {
@@ -251,7 +260,25 @@ class Main {
 		if (running != null) {
 			running.update(dt);
 		}
+		emitter.setCullBounds(canvas.width * 0.5, canvas.height * 0.5);
 		emitter.update(dt);
+		updateAutoRestart(dt);
+	}
+
+	static function updateAutoRestart(dt:Float):Void {
+		if (!autoRestartEl.checked)
+			return;
+		if (running == null)
+			return;
+		final idle = emitter.activeCount() == 0 && running.activeActions.length == 0;
+		if (!idle) {
+			completionIdleTime = 0;
+			return;
+		}
+		completionIdleTime += dt;
+		if (completionIdleTime >= 1.0) {
+			rebuild();
+		}
 	}
 
 	static function render():Void {
@@ -308,6 +335,9 @@ private class PreviewEmitter implements IBulletEmitter {
 	public var playerX:Float = 200;
 	public var playerY:Float = 0;
 	public var bullets:Array<PreviewBullet> = [];
+	public var cullHalfW:Float = 480;
+	public var cullHalfH:Float = 360;
+	public var offscreenKillDelay:Float = 1.0;
 
 	var nextId:Int = 1;
 
@@ -344,7 +374,22 @@ private class PreviewEmitter implements IBulletEmitter {
 			b.velocityY = Math.sin(a) * b.speed;
 			b.posX += b.velocityX * dt;
 			b.posY += b.velocityY * dt;
+
+			final outOfBounds = Math.abs(b.posX) > cullHalfW || Math.abs(b.posY) > cullHalfH;
+			if (outOfBounds) {
+				b.offscreenTime += dt;
+				if (b.offscreenTime > offscreenKillDelay) {
+					b.active = false;
+				}
+			} else {
+				b.offscreenTime = 0;
+			}
 		}
+	}
+
+	public inline function setCullBounds(halfW:Float, halfH:Float):Void {
+		cullHalfW = halfW;
+		cullHalfH = halfH;
 	}
 
 	public function reset():Void {
@@ -369,6 +414,7 @@ private class PreviewBullet implements IBarrageBullet {
 	public var id:Int;
 	public var posX:Float;
 	public var posY:Float;
+	public var offscreenTime:Float;
 
 	public function new(id:Int, x:Float, y:Float, angle:Float, speed:Float, acceleration:Float) {
 		this.id = id;
@@ -380,11 +426,20 @@ private class PreviewBullet implements IBarrageBullet {
 		this.velocityX = 0;
 		this.velocityY = 0;
 		this.active = true;
+		this.offscreenTime = 0;
 	}
 }
 
 private class Scripts {
-	public static final waveburst = "barrage called waveburst\n"
+	public static final waveburst = "# Comments are prefixed with pound sign\n"
+		+ "\n"
+		+ "# A Barrage has a starting Action that results in bullets being created\n"
+		+ "# Actions can have sub-actions\n"
+		+ "# Bullets can trigger actions\n"
+		+ "# Actions triggered by bullets use the bullet's position as origin\n"
+		+ "\n"
+		+ "# Barrage root declaration\n"
+		+ "barrage called waveburst\n"
 		+ "\tbullet called offspring\n"
 		+ "\t\tspeed is -100\n"
 		+ "\t\tacceleration is 150\n"
@@ -406,7 +461,42 @@ private class Scripts {
 		+ "\taction called start\n"
 		+ "\t\tfire source in aimed direction 0\n";
 
-	public static final swarm = "barrage called swarm\n"
+	public static final inchworm = "# Inchworm pattern:\n"
+		+ "# - \"wormsegment\" bullets oscillate speed while curving\n"
+		+ "# - \"worm\" action emits a circular chain with a rotating phase offset\n"
+		+ "\n"
+		+ "barrage called inchworm\n"
+		+ "\tbullet called wormsegment\n"
+		+ "\t\tspeed is 100\n"
+		+ "\t\tdo action\n"
+		+ "\t\t\tincrement direction by 10 over 1 seconds\n"
+		+ "\t\t\tset speed to 0\n"
+		+ "\t\t\twait 0.5 seconds\n"
+		+ "\t\t\tset speed to 100\n"
+		+ "\t\t\twait 0.5 seconds\n"
+		+ "\t\t\trepeat 7 times\n"
+		+ "\n"
+		+ "\taction called worm\n"
+		+ "\t\tmyvalue is 0\n"
+		+ "\t\tfire wormsegment in absolute direction (myvalue)\n"
+		+ "\t\tdo action\n"
+		+ "\t\t\tfire wormsegment in incremental direction (360/30)\n"
+		+ "\t\t\trepeat 29 times\n"
+		+ "\t\twait 0.1 seconds\n"
+		+ "\t\trepeat 4 times\n"
+		+ "\n"
+		+ "\taction called start\n"
+		+ "\t\tdo worm\n"
+		+ "\t\t\tmyvalue is (repeatCount*6)\n"
+		+ "\t\twait 1 seconds\n"
+		+ "\t\trepeat 4 times\n";
+
+	public static final swarm = "# Swarm pattern:\n"
+		+ "# - \"seed\" bullets fan out from the center\n"
+		+ "# - each seed pauses and bursts \"homer\" bullets\n"
+		+ "# - homers continuously re-aim while accelerating\n"
+		+ "\n"
+		+ "barrage called swarm\n"
 		+ "\tbullet called homer\n"
 		+ "\t\tdo action\n"
 		+ "\t\t\tset speed to 0 over 0.7 seconds\n"
@@ -472,4 +562,78 @@ private class Scripts {
 		+ "\t\tdo action\n"
 		+ "\t\t\tfire hunter in incremental direction (360/5)\n"
 		+ "\t\t\trepeat 4 times\n";
+
+	public static final dev = "# Development sandbox pattern:\n"
+		+ "# - demonstrates relative/incremental spawn positions\n"
+		+ "# - demonstrates absolute/incremental acceleration modifiers\n"
+		+ "\n"
+		+ "barrage called dev\n"
+		+ "\tbullet called mybullet\n"
+		+ "\t\tspeed is 100\n"
+		+ "\n"
+		+ "\taction called start\n"
+		+ "\t\tfire mybullet from relative position [10,0] with absolute acceleration 100\n"
+		+ "\t\tdo action\n"
+		+ "\t\t\twait 0.1 seconds\n"
+		+ "\t\t\tfire mybullet from incremental position [10,0] with incremental acceleration -50\n"
+		+ "\t\t\trepeat 30 times\n";
+
+	public static final exhaustive = "# Exhaustive stress pattern:\n"
+		+ "# - target aliases (player / parent / nearest bullet type)\n"
+		+ "# - scripted constants + rand() expressions\n"
+		+ "# - relative/incremental/aimed modifiers\n"
+		+ "# - property set + tween + increment statements\n"
+		+ "# - action references with property overrides\n"
+		+ "# - nested loops with bounded repeat counts for benchmarking\n"
+		+ "\n"
+		+ "barrage called exhaustive_stress\n"
+		+ "\ttarget called hero is player\n"
+		+ "\ttarget called parent_source is parent\n"
+		+ "\ttarget called nearest_anchor is nearest bullet where type is anchor\n"
+		+ "\n"
+		+ "\tbullet called shard\n"
+		+ "\t\tspeed is (20 + rand()*40)\n"
+		+ "\t\tacceleration is -4\n"
+		+ "\t\tdo action\n"
+		+ "\t\t\tincrement direction by 15 over 5 frames\n"
+		+ "\t\t\twait 5 frames\n"
+		+ "\t\t\tset direction to aimed at hero over 6 frames\n"
+		+ "\t\t\tset speed to 120 over 20 frames\n"
+		+ "\t\t\twait 12 frames\n"
+		+ "\t\t\tdie\n"
+		+ "\n"
+		+ "\tbullet called anchor\n"
+		+ "\t\tspeed is (30 + rand()*20)\n"
+		+ "\t\tdirection is (rand()*360)\n"
+		+ "\t\tacceleration is -1\n"
+		+ "\t\tdo action\n"
+		+ "\t\t\twait 8 frames\n"
+		+ "\t\t\tfire shard in aimed at parent_source direction 0 with incremental acceleration 2\n"
+		+ "\t\t\twait 4 frames\n"
+		+ "\t\t\tset speed to 0 over 6 frames\n"
+		+ "\t\t\twait 6 frames\n"
+		+ "\t\t\tset speed to 40\n"
+		+ "\t\t\trepeat 3 times\n"
+		+ "\t\t\tdie\n"
+		+ "\n"
+		+ "\taction called burst\n"
+		+ "\t\tspread is (360/7)\n"
+		+ "\t\tfire shard from relative position [8,0] in aimed at hero direction (-spread*0.5) with relative acceleration -1\n"
+		+ "\t\tdo action\n"
+		+ "\t\t\tfire shard from incremental position [2,0] in incremental direction (spread)\n"
+		+ "\t\t\trepeat 6 times\n"
+		+ "\t\twait 8 frames\n"
+		+ "\n"
+		+ "\taction called cycle\n"
+		+ "\t\tfire anchor in aimed at hero direction (repeatCount*11)\n"
+		+ "\t\tdo burst\n"
+		+ "\t\t\tspread is (24 + repeatCount*2)\n"
+		+ "\t\twait 3 frames\n"
+		+ "\t\tfire anchor from relative position [10,0] in aimed at nearest_anchor direction (-repeatCount*11)\n"
+		+ "\t\trepeat 12 times\n"
+		+ "\n"
+		+ "\taction called start\n"
+		+ "\t\tdo cycle\n"
+		+ "\t\twait 2 seconds\n"
+		+ "\t\trepeat 3 times\n";
 }
