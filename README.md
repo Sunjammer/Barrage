@@ -87,3 +87,10 @@ The following example code demonstrates this relationship.
 	emitter.update(deltaSeconds);
 
 This implementation is still in development. It's necessary for the emitter to be updated separately from the barrage, since an emitter typically won't be exclusive to barrage use.
+
+Web IDE Preview
+========
+
+A lightweight local script IDE with live canvas preview is available in `tools/ide-web`.
+
+Build and run instructions: `tools/ide-web/README.md`
